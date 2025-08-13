@@ -9,13 +9,61 @@ import json
 import sys
 from pathlib import Path
 from video_explainer_generator import VideoExplainerGenerator
-from image_generator import ImageGenerator
+from image_generator import ImageGenerator, gemini_image_prompt
 from tts_processor import TTSProcessor
 from video_compiler import VideoCompiler
 import time
 
 
 class ExplainerVideoCreator:
+    def create_text_overlay_coordinate_files(self, script):
+        """
+        For each segment, generate a file with overlay text and coordinates for the corresponding image.
+        Returns a list of generated JSON file paths.
+        """
+        overlay_coord_files = []
+        for segment in script['segments']:
+            segment_num = segment['segment_number']
+            overlay_text = segment.get('text_overlay', '')
+            image_path = segment.get('background_image', '')
+            coords = None
+            if overlay_text and image_path and os.path.exists(image_path):
+                # Compose a prompt for Gemini
+                prompt = (
+                    f"Given this image and the overlay text, return the best coordinates (x, y, width, height) "
+                    f"in pixels for placing the overlay text so it is readable and does not obscure important parts. "
+                    f"Return as JSON: {{\"x\":..., \"y\":..., \"width\":..., \"height\":...}}\n"
+                    f"Overlay text: {overlay_text}"
+                )
+                coords_text = gemini_image_prompt(image_path, prompt)
+                # Try to parse coordinates from Gemini response
+                coords = None
+                if coords_text:
+                    import re, json
+                    match = re.search(r'\{[^\}]+\}', coords_text)
+                    if match:
+                        try:
+                            parsed = json.loads(match.group(0))
+                            if all(k in parsed for k in ("x", "y", "width", "height")):
+                                coords = parsed
+                        except Exception:
+                            pass
+                if not coords:
+                    print(f"⚠️  Falling back to default coordinates for segment {segment_num}")
+                    coords = {"x": 100, "y": 100, "width": 600, "height": 120}
+                overlay_coord = {
+                    "segment_number": segment_num,
+                    "title": segment.get('title', ''),
+                    "overlay_text": overlay_text,
+                    "coordinates": coords,
+                    "background_image": image_path
+                }
+                coord_file = self.output_dir / f"segment_{segment_num:02d}_overlay_coords.json"
+                with open(coord_file, 'w', encoding='utf-8') as f:
+                    json.dump(overlay_coord, f, indent=2, ensure_ascii=False)
+                overlay_coord_files.append(str(coord_file))
+                print(f"✅ Created overlay coordinate file: {coord_file}")
+        return overlay_coord_files
     """Complete pipeline for creating explainer video assets"""
     
     def __init__(self, output_dir=None):
@@ -26,51 +74,42 @@ class ExplainerVideoCreator:
         self.video_compiler = VideoCompiler(self.output_dir)
         
     def create_complete_video_assets(self, text_content, target_duration=60, segments_count=None, 
-                                   enable_tts=True, tts_service='gtts', tts_kwargs=None):
+                                enable_tts=True, tts_service='gtts', tts_kwargs=None):
         """
         Create all assets needed for explainer video
-        
-        Args:
-            text_content: Input text to convert to video
-            target_duration: Target video duration in seconds
-            segments_count: Number of segments (auto-calculated if None)
-            enable_tts: Whether to generate audio using TTS
-            tts_service: TTS service to use ('gtts', 'edge_tts', 'azure', 'simple')
-            tts_kwargs: Additional arguments for TTS service
-        
-        Returns:
-            Dictionary with paths to all generated assets
         """
         if tts_kwargs is None:
             tts_kwargs = {}
         print("🚀 CREATING COMPLETE EXPLAINER VIDEO ASSETS")
         print("=" * 60)
-        
+
         # Step 1: Generate video script and segments
         print("\n📝 STEP 1: Generating video script...")
         result = self.video_generator.generate_explainer_video_plan(
             text_content, target_duration, segments_count
         )
-        
         if not result:
             print("❌ Failed to generate video script")
             return None
-        
         script_path = result['script_path']
         script = result['script']
-        
+
         # Step 2: Generate background images
         print("\n🎨 STEP 2: Generating background images...")
         images_success = self.image_generator.generate_images_for_script(script_path)
-        
+
         # Step 3: Create text overlay files
         print("\n📝 STEP 3: Creating text overlay files...")
         overlay_files = self.create_text_overlay_files(script)
-        
+
+        # Step 3b: Create overlay coordinate files
+        print("\n📐 STEP 3b: Creating overlay coordinate files...")
+        overlay_coord_files = self.create_text_overlay_coordinate_files(script)
+
         # Step 4: Create narration scripts
         print("\n🗣️  STEP 4: Creating narration scripts...")
         narration_files = self.create_narration_files(script)
-        
+
         # Step 5: Generate audio from narration scripts (if enabled)
         if enable_tts:
             print(f"\n🎵 STEP 5: Generating audio from narration scripts using {tts_service}...")
@@ -78,7 +117,7 @@ class ExplainerVideoCreator:
         else:
             print("\n🎵 STEP 5: Skipping TTS audio generation...")
             audio_files = []
-        
+
         # Step 6: Compile complete video (if enabled)
         if enable_tts and audio_files and not getattr(self, 'skip_video_compilation', False):
             print("\n🎬 STEP 6: Compiling complete video...")
@@ -91,24 +130,25 @@ class ExplainerVideoCreator:
         else:
             print("\n🎬 STEP 6: Skipping video compilation (no audio, TTS disabled, or video compilation disabled)...")
             final_video = None
-        
+
         # Step 7: Generate summary and next steps
         print("\n📋 STEP 7: Creating production summary...")
-        summary_file = self.create_production_summary(script, overlay_files, narration_files, audio_files, final_video)
-        
+        summary_file = self.create_production_summary(
+            script, overlay_files, narration_files, audio_files, final_video, overlay_coord_files
+        )
+
         assets = {
             "script_file": script_path,
             "background_images": [seg['background_image'] for seg in script['segments']],
             "text_overlays": overlay_files,
+            "overlay_coord_files": overlay_coord_files,
             "narration_scripts": narration_files,
             "audio_files": audio_files,
             "final_video": final_video,
             "summary_file": summary_file,
             "output_directory": str(self.output_dir)
         }
-        
         self.print_final_summary(assets, script)
-        
         return assets
     
     def create_text_overlay_files(self, script):
@@ -231,7 +271,36 @@ class ExplainerVideoCreator:
             print(f"❌ Error during video compilation: {e}")
             return None
     
-    def create_production_summary(self, script, overlay_files, narration_files, audio_files, final_video=None):
+    def create_production_summary(self, script, overlay_files, narration_files, audio_files, final_video=None, overlay_coord_files=None):
+        if overlay_coord_files is None:
+            overlay_coord_files = []
+        summary_file = self.output_dir / "production_summary.md"
+        with open(summary_file, 'w', encoding='utf-8') as f:
+            f.write("# Explainer Video Production Summary\n\n")
+            # ...existing code...
+            # File assets
+            f.write("## Generated Assets\n\n")
+            f.write("### Background Images\n")
+            for segment in script['segments']:
+                f.write(f"- `{Path(segment['background_image']).name}` - Segment {segment['segment_number']}\n")
+            f.write("\n### Text Overlay Files\n")
+            for overlay_file in overlay_files:
+                f.write(f"- `{Path(overlay_file).name}`\n")
+            f.write("\n### Overlay Coordinate Files\n")
+            for coord_file in overlay_coord_files:
+                f.write(f"- `{Path(coord_file).name}`\n")
+            f.write("\n### Narration Scripts\n")
+            for narration_file in narration_files:
+                f.write(f"- `{Path(narration_file).name}`\n")
+            f.write("\n### Audio Files\n")
+            if audio_files:
+                for audio_file in audio_files:
+                    f.write(f"- `{Path(audio_file).name}`\n")
+                f.write("\n✅ **Audio generation complete!** All narration has been converted to MP3 files.\n")
+            else:
+                f.write("- No audio files generated\n")
+                f.write("\n⚠️  **Audio generation needed** - Use TTS to convert narration scripts to audio.\n")
+            # ...existing code continues...
         """Create a production summary with all details and next steps"""
         summary_file = self.output_dir / "production_summary.md"
         
@@ -345,15 +414,14 @@ class ExplainerVideoCreator:
         print(f"📋 **Video Script**: {Path(assets['script_file']).name}")
         print(f"🎨 **Background Images**: {len(assets['background_images'])} files")
         print(f"📝 **Text Overlays**: {len(assets['text_overlays'])} files")
+        print(f"📐 **Overlay Coordinate Files**: {len(assets.get('overlay_coord_files', []))} files")
         print(f"🗣️  **Narration Scripts**: {len(assets['narration_scripts'])} files")
         print(f"🎵 **Audio Files**: {len(assets['audio_files'])} files")
         if assets.get('final_video'):
             print(f"🎬 **Final Video**: {Path(assets['final_video']).name}")
         print(f"📊 **Production Summary**: {Path(assets['summary_file']).name}")
-        
         total_duration = script['video_metadata']['estimated_duration']
         print(f"\n⏱️  **Estimated Video Duration**: {total_duration} seconds ({total_duration//60}:{total_duration%60:02d})")
-        
         print(f"\n📋 **Next Steps**:")
         print(f"1. Review the production summary: {Path(assets['summary_file']).name}")
         if assets.get('final_video'):

@@ -48,7 +48,7 @@ class VideoExplainerGenerator:
             segments_count = max(3, min(10, target_duration // 8))
 
         system_prompt = """
-        You are an expert video script writer and visual content strategist. Your task is to analyze text content and create structured video segments with detailed image generation prompts.
+        You are an expert infographic designer and educational content strategist. Your task is to create coordinated image-text pairs for explainer videos.
 
         CRITICAL: You must respond with ONLY a valid JSON array. No explanations, no markdown, no extra text.
 
@@ -57,30 +57,46 @@ class VideoExplainerGenerator:
         - title: String (short, descriptive title)
         - narration_text: String (conversational text for TTS, 1-2 sentences)
         - key_points: Array of strings (main concepts to highlight)
-        - image_prompt: String (detailed prompt for AI image generation)
-        - text_overlay: String (short text for on-screen display)
+        - image_prompt: String (detailed prompt for coordinated infographic with empty placeholders)
+        - text_overlay: String (detailed structured text that maps to image placeholders)
         - duration_seconds: Integer (8-12 seconds per segment)
+
+        CRITICAL DESIGN COORDINATION:
+        The image_prompt and text_overlay must work together as a coordinated infographic system.
+
+        For image_prompt, create infographics with SPECIFIC EMPTY PLACEHOLDERS:
+        - Light colors (whites, light blues, soft greens, pastels)
+        - Specific numbered or positioned empty boxes/areas for text
+        - Visual elements that support the content (icons, arrows, diagrams)
+        - Clear structure (flowcharts, step diagrams, comparison layouts)
+        - Professional, clean infographic style
+        - NO TEXT in the image itself - only empty placeholders
+
+        For text_overlay, create DETAILED STRUCTURED CONTENT that fills those placeholders:
+        - NOT just titles - use full sentences, lists, step-by-step explanations
+        - Content that maps directly to the empty areas in the image
+        - Structured format: numbered lists, bullet points, process steps
+        - Educational and informative text that explains the concept
 
         EXAMPLE OUTPUT FORMAT:
         [
           {
             "segment_number": 1,
-            "title": "Introduction to AI",
-            "narration_text": "Artificial intelligence is transforming how we work and live.",
-            "key_points": ["AI transformation", "workplace impact", "daily life"],
-            "image_prompt": "Modern office scene with AI-related visual elements: computer screens showing data analytics, robotic arm, neural network diagrams, and productivity charts. Professional blue and white color scheme with clear areas for text overlays at top and bottom",
-            "text_overlay": "AI TRANSFORMATION",
+            "title": "AI Benefits in Business",
+            "narration_text": "Artificial intelligence delivers measurable benefits across multiple business areas.",
+            "key_points": ["efficiency gains", "cost reduction", "decision making"],
+            "image_prompt": "Light blue and white infographic layout with 3 empty rectangular boxes arranged vertically on the right side, connected by arrows. Left side shows simple business icons (office building, gears, chart). Clean, minimal design with soft colors and plenty of white space.",
+            "text_overlay": "1. Automates repetitive tasks and increases efficiency by 40%\n2. Reduces operational costs through smart resource allocation\n3. Improves decision-making with data-driven insights",
             "duration_seconds": 10
           }
         ]
 
-        For image_prompt, create detailed, specific prompts for INFORMATIVE explainer video images:
-        - Describe specific visual elements that represent the content (icons, diagrams, charts, illustrations)
-        - Include relevant visual metaphors, infographics, or conceptual representations
-        - Specify content-related elements (e.g., "solar panels and growth charts" for renewable energy)
-        - Professional, educational illustration style
-        - Clear visual storytelling that matches the narration
-        - Informative rather than just decorative backgrounds
+        DESIGN PRINCIPLES:
+        - Image and text must be designed together as one coordinated system
+        - Light, professional color schemes (avoid dark or bright colors)
+        - Clear visual hierarchy with designated text areas
+        - Educational infographic style, not decorative backgrounds
+        - Text should be substantial and informative, not just keywords
 
         IMPORTANT: Return ONLY the JSON array, nothing else. No ```json``` markers, no explanations.
         """
@@ -173,55 +189,57 @@ class VideoExplainerGenerator:
     
     def enhance_single_prompt(self, original_prompt):
         """
-        Enhance a single image prompt to create informative, content-specific images with text placeholders
+        Enhance image prompts to create coordinated infographic layouts with specific empty placeholders
 
         Args:
-            original_prompt: Basic image prompt
+            original_prompt: Basic image prompt from Gemini
 
         Returns:
-            Enhanced prompt string for informative explainer images
+            Enhanced prompt for light-colored infographic with empty text areas
         """
         if not original_prompt:
             return original_prompt
 
         enhancement_template = f"""
-        Create an informative explainer video image that visually represents the content with designated text areas.
+        Create a light-colored, professional infographic layout for an explainer video.
 
-        CONTENT TO VISUALIZE:
+        BASE DESIGN CONCEPT:
         {original_prompt}
 
-        VISUAL REQUIREMENTS:
+        CRITICAL REQUIREMENTS:
+        - Light color palette: whites, light blues, soft pastels, light grays
         - 16:9 aspect ratio (1920x1080 pixels)
-        - Informative and educational illustration style
-        - Clear visual representation of the concept/topic
-        - Include relevant icons, diagrams, charts, or illustrations
+        - Professional infographic/educational style
+        - Clean, minimal, uncluttered design
+
+        EMPTY PLACEHOLDER AREAS (ESSENTIAL):
+        - Create specific empty rectangular or box areas for text placement
+        - These areas should have light backgrounds (white, very light blue, etc.)
+        - Position placeholders logically based on the content flow
+        - Ensure placeholders are clearly defined and spacious
+        - NO TEXT OR TYPOGRAPHY in the image - only empty spaces for text
+
+        VISUAL ELEMENTS:
+        - Simple, clean icons and illustrations related to the topic
+        - Connecting arrows, lines, or flow indicators where appropriate
+        - Visual hierarchy that guides the eye through the content
+        - Subtle visual elements that support but don't compete with text
         - Professional business/educational aesthetic
-        - Modern, clean, engaging design
 
-        TEXT PLACEHOLDER AREAS (CRITICAL):
-        - Reserve the TOP 20% of the image for main title text overlay
-        - Reserve the BOTTOM 15% for subtitle/key points text
-        - These areas should have solid color backgrounds or subtle gradients
-        - High contrast between text areas and visual content for readability
-        - Text areas should be clearly defined rectangular spaces
-        - Avoid placing important visual elements in text areas
+        LAYOUT STRUCTURE:
+        - Organize content in a logical flow (top to bottom, left to right)
+        - Create clear sections or areas for different types of information
+        - Use plenty of white space and breathing room
+        - Ensure the design supports structured text content (lists, steps, explanations)
 
-        CONTENT-SPECIFIC ELEMENTS:
-        - Use visual metaphors, icons, or diagrams related to the topic
-        - Include relevant infographic elements (charts, arrows, progress bars)
-        - Use colors that match the content theme and mood
-        - Create visual hierarchy that supports the narrative
-        - Show processes, comparisons, or data visualization when relevant
+        COLOR AND STYLE:
+        - Predominantly light colors (white backgrounds, light blue accents)
+        - Soft, professional color scheme suitable for business presentations
+        - Avoid dark, bright, or distracting colors
+        - Clean, modern infographic style
+        - Suitable for overlaying detailed text content
 
-        STYLE GUIDELINES:
-        - Avoid any text or typography in the image itself
-        - Professional, corporate presentation style
-        - Suitable for business/educational explainer videos
-        - Clean, modern illustration or infographic style
-        - Engaging but not distracting from text overlays
-        - Use consistent color palette throughout
-
-        The image should tell the story visually while providing clear, uncluttered spaces for text overlays.
+        The image should function as a structured template ready for detailed text overlays.
         """
 
         return enhancement_template.strip()

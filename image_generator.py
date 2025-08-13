@@ -13,7 +13,80 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 
 
+def gemini_image_prompt(image_path, prompt, model_name="gemini-1.5-flash"):
+    """
+    Send an image and a prompt to Gemini using the correct format.
+    Args:
+        image_path (str): Path to the image file.
+        prompt (str): The text prompt to send.
+        model_name (str): Gemini model name.
+    Returns:
+        str: Gemini response text.
+    """
+    import base64
+    import google.generativeai as genai
+    import os
+    api_key = os.getenv("GOOGLE_API_KEY2")
+    if not api_key:
+        print("❌ GOOGLE_API_KEY2 not found. Cannot call Gemini.")
+        return None
+    genai.configure(api_key=api_key)
+    with open(image_path, "rb") as img_file:
+        img_base64 = base64.b64encode(img_file.read()).decode("utf-8")
+    model = genai.GenerativeModel(model_name)
+    response = model.generate_content([
+        {"mime_type": "image/png", "data": img_base64},
+        prompt
+    ])
+    return getattr(response, "text", None)
+
 class ImageGenerator:
+    def get_overlay_coordinates_prompt(self, image_path, overlay_text):
+        """
+        Encode image as base64 and prepare a Gemini prompt to get overlay text coordinates.
+        Args:
+            image_path (str or Path): Path to the image file.
+            overlay_text (str): The text to overlay on the image.
+        Returns:
+            dict: { 'base64_image': ..., 'prompt': ... }
+        """
+        import base64
+        from pathlib import Path
+        image_path = Path(image_path)
+        with open(image_path, "rb") as img_file:
+            img_base64 = base64.b64encode(img_file.read()).decode('utf-8')
+
+        prompt = f"""
+You are given an image (base64 encoded below) and a text string to overlay on the image.
+"mime_type": "image/png", "data": {img_base64}
+Overlay text: \"{overlay_text}\"
+
+Please analyze the image and return the best coordinates (x, y, width, height) in pixels for placing the overlay text so it is readable and does not obscure important parts of the image. Return the result as a JSON object like: {{\"x\":..., \"y\":..., \"width\":..., \"height\":...}}
+"""
+        return {
+            'base64_image': img_base64,
+            'prompt': prompt
+        }
+
+    def parse_gemini_coordinates_response(self, response_text):
+        """
+        Parse Gemini's response to extract coordinates JSON.
+        Args:
+            response_text (str): The raw response from Gemini.
+        Returns:
+            dict or None: Parsed coordinates if found, else None.
+        """
+        import json, re
+        # Try to find a JSON object in the response
+        match = re.search(r'\{[^\}]+\}', response_text)
+        if match:
+            try:
+                coords = json.loads(match.group(0))
+                if all(k in coords for k in ("x", "y", "width", "height")):
+                    return coords
+            except Exception:
+                pass
+        return None
     """Generate background images for video segments using various AI services"""
 
     def __init__(self, output_dir=None):
