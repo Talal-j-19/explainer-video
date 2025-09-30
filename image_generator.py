@@ -229,20 +229,16 @@ class ImageGenerator:
         
         try:
             response = requests.post(url, headers=headers, json=data)
-            
             if response.status_code == 200:
                 data = response.json()
-                
                 for i, image in enumerate(data["artifacts"]):
                     with open(output_path, "wb") as f:
                         f.write(base64.b64decode(image["base64"]))
-                
                 print(f"✅ Generated image with Stability AI: {output_path}")
                 return True
             else:
                 print(f"❌ Stability AI error: {response.status_code} - {response.text}")
                 return False
-                
         except Exception as e:
             print(f"❌ Error with Stability AI: {e}")
             return False

@@ -10,3 +10,21 @@ moviepy==1.0.3
 requests==2.32.3
 httpx==0.25.2
 pytest==7.4.3
+
+# TTS Requirements for Explainer Video Audio Generation
+
+# Google Text-to-Speech (recommended, free)
+gtts>=2.5.0
+
+# Microsoft Edge TTS (free, high quality)
+edge-tts>=6.1.0
+
+# Azure Cognitive Services TTS (paid, enterprise quality)
+# azure-cognitiveservices-speech>=1.31.0
+
+# For simple audio fallback (optional)
+numpy>=1.21.0
+scipy>=1.7.0
+
+# Core dependencies (should already be installed)
+pathlib2>=2.3.0; python_version < "3.4"

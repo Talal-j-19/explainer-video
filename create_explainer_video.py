@@ -16,6 +16,52 @@ import time
 
 
 class ExplainerVideoCreator:
+    def create_text_overlay_coordinate_files(self, script):
+        """
+        For each segment, generate a file with overlay text and coordinates for the corresponding image using Gemini.
+        Returns a list of generated JSON file paths.
+        """
+        from image_generator import gemini_image_prompt
+        import json
+        import re
+        overlay_coord_files = []
+        for segment in script['segments']:
+            segment_num = segment['segment_number']
+            overlay_text = segment.get('text_overlay', '')
+            image_path = segment.get('background_image', '')
+            coords = None
+            if overlay_text and image_path and os.path.exists(image_path):
+                # Call Gemini API for coordinates (multi-part)
+                coords_text = gemini_image_prompt(image_path, overlay_text)
+                coords = None
+                if coords_text:
+                    try:
+                        # Extract JSON array from response
+                        match = re.search(r'\[.*\]', coords_text, re.DOTALL)
+                        if match:
+                            coords = json.loads(match.group(0))
+                    except Exception:
+                        pass
+                if not coords or not isinstance(coords, list):
+                    print(f"⚠️  Falling back to default coordinates for segment {segment_num}")
+                    # Fallback: treat the whole overlay as one part
+                    coords = [{
+                        "text": overlay_text,
+                        "x": 100, "y": 100, "width": 600, "height": 120
+                    }]
+                overlay_coord = {
+                    "segment_number": segment_num,
+                    "title": segment.get('title', ''),
+                    "overlay_text": overlay_text,
+                    "coordinates": coords,
+                    "background_image": image_path
+                }
+                coord_file = self.output_dir / f"segment_{segment_num:02d}_overlay_coords.json"
+                with open(coord_file, 'w', encoding='utf-8') as f:
+                    json.dump(overlay_coord, f, indent=2, ensure_ascii=False)
+                overlay_coord_files.append(str(coord_file))
+                print(f"✅ Created overlay coordinate file: {coord_file}")
+        return overlay_coord_files
     """Complete pipeline for creating explainer video assets"""
     
     def __init__(self, output_dir=None):
@@ -67,6 +113,10 @@ class ExplainerVideoCreator:
         print("\n📝 STEP 3: Creating text overlay files...")
         overlay_files = self.create_text_overlay_files(script)
         
+        # Step 3b: Create overlay coordinate files
+        print("\n📐 STEP 3b: Creating overlay coordinate files...")
+        overlay_coord_files = self.create_text_overlay_coordinate_files(script)
+
         # Step 4: Create narration scripts
         print("\n🗣️  STEP 4: Creating narration scripts...")
         narration_files = self.create_narration_files(script)
@@ -100,6 +150,7 @@ class ExplainerVideoCreator:
             "script_file": script_path,
             "background_images": [seg['background_image'] for seg in script['segments']],
             "text_overlays": overlay_files,
+            "overlay_coord_files": overlay_coord_files,
             "narration_scripts": narration_files,
             "audio_files": audio_files,
             "final_video": final_video,
