@@ -12,10 +12,10 @@ def test_gemini_image_generation():
     """Test Gemini 2.0 Flash image generation"""
     
     load_dotenv()
-    api_key = os.getenv("GOOGLE_API_KEY2")
+    api_key = os.getenv("GOOGLE_API_KEY")
     
     if not api_key:
-        print("❌ GOOGLE_API_KEY2 not found")
+        print("❌ GOOGLE_API_KEY not found")
         return False
     
     genai.configure(api_key=api_key)

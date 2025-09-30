@@ -22,7 +22,7 @@ class ImageGenerator:
         self.output_dir.mkdir(exist_ok=True)
 
         # Configure Gemini API
-        api_key = os.getenv("GOOGLE_API_KEY2")
+        api_key = os.getenv("GOOGLE_API_KEY")
         if api_key:
             genai.configure(api_key=api_key)
         else:
@@ -33,7 +33,7 @@ class ImageGenerator:
         Generate image using Gemini's image generation
         Requires GOOGLE_API_KEY environment variable
         """
-        api_key = os.getenv("GOOGLE_API_KEY2")
+        api_key = os.getenv("GOOGLE_API_KEY")
         if not api_key:
             print("❌ GOOGLE_API_KEY2 not found. Skipping Gemini generation.")
             return False
