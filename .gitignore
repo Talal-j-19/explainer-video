@@ -99,3 +99,6 @@ video_segments/
 # Ignore Markdown summaries (if not source)
 # (Uncomment if you want to ignore all .md files)
 # *.md
+text mapping/
+coordinate mapping/
+segment_01_overlay_coords.json
