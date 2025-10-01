@@ -52,10 +52,8 @@ class ImageGenerator:
             constraint_suffix = """
 Constraints:
 - Do NOT include placeholders like {title}, {subtitle}, lorem ipsum, or any words/labels.
-- Provide empty but styled containers for overlay areas only (e.g., title/subtitle backplates), with no inner text.
 - Maintain high contrast between foreground and background (WCAG AA ~ contrast ratio >= 4.5:1).
 - Ensure foreground never blends with background; use contrasting backplates, outlines, or shadows where needed.
-- Keep design informative and visual; rely on icons, diagrams, shapes, and charts without text.
 """.strip()
 
             final_prompt = f"{image_prompt}\n\n{constraint_suffix}"
