@@ -1,35 +1,38 @@
-#!/usr/bin/env python3
-"""
-Image Generator for Video Explainer
-Generates background images for video segments using infographic API + Playwright
-"""
-
 import os
 import json
 import requests
 from pathlib import Path
-from playwright.sync_api import sync_playwright
-
+import asyncio
+from playwright.async_api import async_playwright
 
 class ImageGenerator:
-    """Generate background images for video segments using infographic API"""
     API_URL = "https://dev.slidexy.net/api/infographic"
 
     def __init__(self, output_dir=None):
         self.output_dir = Path(output_dir) if output_dir else Path("video_segments")
         self.output_dir.mkdir(exist_ok=True)
 
-    def generate_images_for_script(self, script_path):
-        """
-        Generate all background images for a video script using infographic API.
+    async def render_html_to_png(self, html_content, output_path):
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page()
+            await page.set_content(html_content, wait_until="networkidle")
 
-        Args:
-            script_path: Path to the video script JSON file
-        """
+            # Target main infographic wrapper
+            element = await page.query_selector("body > div:first-of-type")
+            if not element:
+                raise ValueError("❌ No infographic element found in HTML")
+
+            # Optional: enforce square corners
+            await page.add_style_tag(content="body > div:first-of-type { border-radius: 0 !important; }")
+
+            await element.screenshot(path=str(output_path))
+            await browser.close()
+
+    async def generate_images_for_script(self, script_path):
         print("🎨 GENERATING INFOGRAPHIC IMAGES")
         print("=" * 40)
 
-        # Load script
         with open(script_path, 'r', encoding='utf-8') as f:
             script = json.load(f)
 
@@ -69,22 +72,8 @@ class ImageGenerator:
                     f_html.write(html_content)
                 print(f"💾 Saved raw HTML → {html_path}")
 
-                # 2. Render HTML to PNG (headless Playwright)
-                with sync_playwright() as p:
-                    browser = p.chromium.launch(headless=True)
-                    page = browser.new_page()
-                    page.set_content(html_content, wait_until="networkidle")
-
-                    # Target main infographic wrapper
-                    element = page.query_selector("body > div:first-of-type")
-                    if not element:
-                        raise ValueError("❌ No infographic element found in HTML")
-
-                    # Optional: enforce square outer corners
-                    page.add_style_tag(content="body > div:first-of-type { border-radius: 0 !important; }")
-
-                    element.screenshot(path=str(output_path))
-                    browser.close()
+                # Render PNG
+                await self.render_html_to_png(html_content, output_path)
 
                 # Save path into segment
                 segment['background_image'] = str(output_path)
@@ -94,7 +83,6 @@ class ImageGenerator:
             except Exception as e:
                 print(f"❌ Failed to generate infographic for segment {segment_num}: {e}")
 
-        # Save updated script with image paths
         with open(script_path, 'w', encoding='utf-8') as f:
             json.dump(script, f, indent=2, ensure_ascii=False)
 
@@ -106,6 +94,11 @@ class ImageGenerator:
 
 def main():
     import argparse
+    import sys
+    
+    if sys.platform.startswith("win"):
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        
     parser = argparse.ArgumentParser(description='Generate background images for video explainer')
     parser.add_argument('script_path', help='Path to video script JSON file')
     args = parser.parse_args()
@@ -115,9 +108,10 @@ def main():
         return
 
     generator = ImageGenerator()
-    generator.generate_images_for_script(args.script_path)
+    asyncio.run(generator.generate_images_for_script(args.script_path))
     print("\n🎉 Image generation complete!")
 
 
 if __name__ == '__main__':
     main()
+    

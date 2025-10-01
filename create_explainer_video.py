@@ -5,6 +5,7 @@ Combines text analysis, image generation, and asset preparation for video creati
 """
 
 import os
+import asyncio
 import sys
 from pathlib import Path
 from video_explainer_generator import VideoExplainerGenerator
@@ -13,6 +14,8 @@ from tts_processor import TTSProcessor
 from video_compiler import VideoCompiler
 import time
 
+if sys.platform.startswith("win"):
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 class ExplainerVideoCreator:
     def create_text_overlay_coordinate_files(self, script):
@@ -106,7 +109,16 @@ class ExplainerVideoCreator:
         
         # Step 2: Generate background images
         print("\n🎨 STEP 2: Generating background images...")
-        images_success = self.image_generator.generate_images_for_script(script_path)
+        try:
+            images_success = asyncio.run(
+                self.image_generator.generate_images_for_script(script_path)
+        )
+        except RuntimeError:
+        # If already inside an event loop (like in FastAPI/Notebook), use this
+            loop = asyncio.get_event_loop()
+            images_success = loop.run_until_complete(
+                self.image_generator.generate_images_for_script(script_path)
+    )
         
         # Step 3: Create text overlay files
         print("\n📝 STEP 3: Creating text overlay files...")
