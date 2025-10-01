@@ -5,7 +5,6 @@ Combines text analysis, image generation, and asset preparation for video creati
 """
 
 import os
-import json
 import sys
 from pathlib import Path
 from video_explainer_generator import VideoExplainerGenerator
@@ -112,10 +111,6 @@ class ExplainerVideoCreator:
         # Step 3: Create text overlay files
         print("\n📝 STEP 3: Creating text overlay files...")
         overlay_files = self.create_text_overlay_files(script)
-        
-        # Step 3b: Create overlay coordinate files
-        print("\n📐 STEP 3b: Creating overlay coordinate files...")
-        overlay_coord_files = self.create_text_overlay_coordinate_files(script)
 
         # Step 4: Create narration scripts
         print("\n🗣️  STEP 4: Creating narration scripts...")
@@ -150,7 +145,7 @@ class ExplainerVideoCreator:
             "script_file": script_path,
             "background_images": [seg['background_image'] for seg in script['segments']],
             "text_overlays": overlay_files,
-            "overlay_coord_files": overlay_coord_files,
+            # "overlay_coord_files": overlay_coord_files,
             "narration_scripts": narration_files,
             "audio_files": audio_files,
             "final_video": final_video,
