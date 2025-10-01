@@ -48,12 +48,24 @@ class ImageGenerator:
             image_prompt = segment.get('image_prompt', '')
             print(f"📝 Using prompt: {image_prompt[:100]}...")
 
+            # Enforce strict no-text and high-contrast constraints while keeping references enabled
+            constraint_suffix = """
+Constraints:
+- Do NOT include placeholders like {title}, {subtitle}, lorem ipsum, or any words/labels.
+- Provide empty but styled containers for overlay areas only (e.g., title/subtitle backplates), with no inner text.
+- Maintain high contrast between foreground and background (WCAG AA ~ contrast ratio >= 4.5:1).
+- Ensure foreground never blends with background; use contrasting backplates, outlines, or shadows where needed.
+- Keep design informative and visual; rely on icons, diagrams, shapes, and charts without text.
+""".strip()
+
+            final_prompt = f"{image_prompt}\n\n{constraint_suffix}"
+
             output_path = self.output_dir / f"segment_{segment_num:02d}_background.png"
 
             try:
                 response = requests.post(
                     self.API_URL,
-                    json={"prompt": image_prompt, "useReferences": True},
+                    json={"prompt": final_prompt, "useReferences": True},
                     timeout=60
                 )
                 print(f"📡 API Status: {response.status_code}")

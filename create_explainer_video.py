@@ -14,9 +14,6 @@ from tts_processor import TTSProcessor
 from video_compiler import VideoCompiler
 import time
 
-if sys.platform.startswith("win"):
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
 class ExplainerVideoCreator:
     def create_text_overlay_coordinate_files(self, script):
         """
