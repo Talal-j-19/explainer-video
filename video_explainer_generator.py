@@ -43,9 +43,9 @@ class VideoExplainerGenerator:
         """
         print("🔍 Analyzing text content for video segments...")
 
-        # Auto-calculate segments if not provided (aim for 8-12 seconds per segment)
+        # Auto-calculate segments if not provided (aim for 5-7 seconds per segment for more dynamic videos)
         if segments_count is None:
-            segments_count = max(3, min(10, target_duration // 8))
+            segments_count = max(5, min(20, target_duration // 5))
 
         system_prompt = """
         You are an expert video script writer and visual content strategist. Your task is to analyze text content and create structured video segments with detailed image generation prompts.
@@ -59,7 +59,7 @@ class VideoExplainerGenerator:
         - key_points: Array of strings (main concepts to highlight)
         - image_prompt: String (detailed prompt for AI image generation)
         - text_overlay: String (short text for on-screen display)
-        - duration_seconds: Integer (8-12 seconds per segment)
+        - duration_seconds: Integer (5-7 seconds per segment for dynamic pacing)
 
         EXAMPLE OUTPUT FORMAT:
         [
@@ -70,7 +70,7 @@ class VideoExplainerGenerator:
             "key_points": ["AI transformation", "workplace impact", "daily life"],
             "image_prompt": "Modern office scene with AI-related visual elements: computer screens showing data analytics, robotic arm, neural network diagrams, and productivity charts. Professional blue and white color scheme with clear areas for text overlays at top and bottom",
             "text_overlay": "AI TRANSFORMATION",
-            "duration_seconds": 10
+            "duration_seconds": 6
           }
         ]
 
@@ -93,7 +93,7 @@ class VideoExplainerGenerator:
             "requirements": [
                 "Create logical, flowing segments",
                 "Each segment covers one main concept",
-                "Suitable for 8-12 seconds of narration",
+                "Suitable for 5-7 seconds of narration",
                 "Include detailed image generation prompts",
                 "Professional, educational tone"
             ]
@@ -269,7 +269,7 @@ class VideoExplainerGenerator:
         # Enhance image prompts first
         enhanced_segments = self.generate_enhanced_prompts(segments)
 
-        total_duration = sum(seg.get('duration_seconds', 10) for seg in enhanced_segments)
+        total_duration = sum(seg.get('duration_seconds', 6) for seg in enhanced_segments)
 
         script = {
             "video_metadata": {
@@ -293,11 +293,11 @@ class VideoExplainerGenerator:
                 "text_overlay": segment.get('text_overlay', ''),
                 "key_points": segment.get('key_points', []),
                 "image_prompt": segment.get('image_prompt', ''),
-                "duration_seconds": segment.get('duration_seconds', 10),
+                "duration_seconds": segment.get('duration_seconds', 6),
                 "background_image": image_path,
                 "timing": {
-                    "start_time": sum(seg.get('duration_seconds', 10) for seg in enhanced_segments[:i-1]),
-                    "end_time": sum(seg.get('duration_seconds', 10) for seg in enhanced_segments[:i])
+                    "start_time": sum(seg.get('duration_seconds', 6) for seg in enhanced_segments[:i-1]),
+                    "end_time": sum(seg.get('duration_seconds', 6) for seg in enhanced_segments[:i])
                 }
             }
 

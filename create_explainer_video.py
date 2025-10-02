@@ -201,7 +201,7 @@ class ExplainerVideoCreator:
             with open(narration_file, 'w', encoding='utf-8') as f:
                 f.write(f"# Narration for Segment {segment_num}\n")
                 f.write(f"# Title: {segment['title']}\n")
-                f.write(f"# Duration: {segment.get('duration_seconds', 10)} seconds\n\n")
+                f.write(f"# Duration: {segment.get('duration_seconds', 6)} seconds\n\n")
                 f.write(narration_text)
             
             narration_files.append(str(narration_file))
@@ -216,7 +216,7 @@ class ExplainerVideoCreator:
             
             for segment in script['segments']:
                 f.write(f"## Segment {segment['segment_number']}: {segment['title']}\n")
-                f.write(f"Duration: {segment.get('duration_seconds', 10)} seconds\n")
+                f.write(f"Duration: {segment.get('duration_seconds', 6)} seconds\n")
                 f.write(f"Timing: {segment['timing']['start_time']}s - {segment['timing']['end_time']}s\n\n")
                 f.write(f"{segment.get('narration_text', '')}\n\n")
                 f.write("-" * 50 + "\n\n")
@@ -305,7 +305,7 @@ class ExplainerVideoCreator:
             f.write("## Segments Overview\n\n")
             for segment in script['segments']:
                 f.write(f"### Segment {segment['segment_number']}: {segment['title']}\n")
-                f.write(f"- **Duration**: {segment.get('duration_seconds', 10)} seconds\n")
+                f.write(f"- **Duration**: {segment.get('duration_seconds', 6)} seconds\n")
                 f.write(f"- **Timing**: {segment['timing']['start_time']}s - {segment['timing']['end_time']}s\n")
                 f.write(f"- **Background Image**: `{Path(segment['background_image']).name}`\n")
                 f.write(f"- **Text Overlay**: {segment.get('text_overlay', 'None')}\n")
