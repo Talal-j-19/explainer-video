@@ -16,11 +16,13 @@ import time
 class VideoCompiler:
     """Compile explainer video segments into final video"""
     
-    def __init__(self, video_segments_dir: str = "video_segments"):
-        self.video_segments_dir = Path(video_segments_dir)
-        # Always use the parent directory of video_segments_dir as the output_dir (the job folder)
-        self.output_dir = self.video_segments_dir.parent
-        self.output_dir.mkdir(exist_ok=True)
+    def __init__(self, output_dir: str = "generated_videos"):
+        self.output_dir = Path(output_dir) if output_dir else Path("generated_videos")
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Segments folder lives inside the job folder
+        self.video_segments_dir = self.output_dir / "segments"
+        self.video_segments_dir.mkdir(parents=True, exist_ok=True)
         
         # Video settings
         self.video_width = 1920

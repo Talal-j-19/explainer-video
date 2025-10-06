@@ -11,6 +11,7 @@ from pathlib import Path
 from video_explainer_generator import VideoExplainerGenerator
 from image_generator import ImageGenerator
 from tts_processor import TTSProcessor
+from job_manager import InfographicJobManager
 from video_compiler import VideoCompiler
 import time
 
@@ -270,7 +271,7 @@ class ExplainerVideoCreator:
             # Set video compiler to use our output directory
             # Must be a Path, not str, because compiler uses Path division with '/'
             self.video_compiler.video_segments_dir = self.output_dir
-            self.video_compiler.output_dir = Path("generated_videos")
+            self.video_compiler.output_dir = self.output_dir 
             
             # Compile complete video
             final_video = self.video_compiler.compile_complete_video()
@@ -442,10 +443,10 @@ def main():
     
     args = parser.parse_args()
     
-    # Generate a job ID (timestamp-based for simplicity)
-    job_id = str(int(time.time()))
-    job_output_dir = Path("generated_videos") / f"job_{job_id}"
-    job_output_dir.mkdir(parents=True, exist_ok=True)
+    # Use the job manager to create a new structured job folder
+    job_manager = InfographicJobManager(base_dir="generated_videos")
+    job_id, job_output_dir = job_manager.create_new_job(topic="explainer_video")
+
     print(f"\n🆔 Job ID: {job_id}")
     print(f"📁 Output directory: {job_output_dir}\n")
     
