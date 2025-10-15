@@ -6,7 +6,7 @@ import asyncio
 from playwright.async_api import async_playwright
 
 class ImageGenerator:
-    API_URL = "https://dev.slidexy.net/api/infographic"
+    API_URL = "https://dev.slidexy.net/api/vidGenImg"
 
     def __init__(self, output_dir=None):
         self.output_dir = Path(output_dir) if output_dir else Path("video_segments")
