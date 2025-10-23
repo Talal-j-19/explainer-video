@@ -13,6 +13,7 @@ from image_generator import ImageGenerator
 from tts_processor import TTSProcessor
 from job_manager import InfographicJobManager
 from video_compiler import VideoCompiler
+from storage_service import upload_to_spaces, cleanup_local_folder
 import time
 
 class ExplainerVideoCreator:
@@ -147,7 +148,7 @@ class ExplainerVideoCreator:
             print("\n🎬 STEP 6: Skipping video compilation (no audio, TTS disabled, or video compilation disabled)...")
             final_video = None
         
-        # Step 7: Generate summary and next steps
+                # ✅ Step 7: Generate summary and next steps
         print("\n📋 STEP 7: Creating production summary...")
         summary_file = self.create_production_summary(script, overlay_files, narration_files, audio_files, final_video)
         
@@ -155,17 +156,39 @@ class ExplainerVideoCreator:
             "script_file": script_path,
             "background_images": [seg['background_image'] for seg in script['segments']],
             "text_overlays": overlay_files,
-            # "overlay_coord_files": overlay_coord_files,
             "narration_scripts": narration_files,
             "audio_files": audio_files,
             "final_video": final_video,
             "summary_file": summary_file,
             "output_directory": str(self.output_dir)
         }
-        
+
         self.print_final_summary(assets, script)
-        
+
+        # ✅ Step 8: Upload to DigitalOcean Spaces & Cleanup
+        try:
+            from storage_service import upload_to_spaces, cleanup_local_folder
+            if final_video and os.path.exists(final_video):
+                job_id = int(time.time())
+                object_name = f"videos/{job_id}/{Path(final_video).name}"
+
+                print("🚀 Uploading final video to DigitalOcean Spaces...")
+                public_url = upload_to_spaces(final_video, object_name)
+                print(f"🌍 Uploaded successfully: {public_url}")
+                assets["public_url"] = public_url
+            else:
+                print("⚠️ No final video found to upload.")
+                assets["public_url"] = None
+
+            # ✅ Clean up local assets (only in production)
+            cleanup_local_folder(self.output_dir)
+
+        except Exception as e:
+            print(f"❌ Upload or cleanup failed: {e}")
+            assets["public_url"] = None
+
         return assets
+
     
     def create_text_overlay_files(self, script):
         """Create individual text files for each segment's overlay text"""
