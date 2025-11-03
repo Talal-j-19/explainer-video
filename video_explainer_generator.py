@@ -185,7 +185,7 @@ class VideoExplainerGenerator:
             return original_prompt
 
         enhancement_template = f"""
-        Create an informative explainer video image that visually represents the content with designated text areas.
+        Create an informative explainer video html code that visually represents the content with designated text areas.
 
         CONTENT TO VISUALIZE:
         {original_prompt}
