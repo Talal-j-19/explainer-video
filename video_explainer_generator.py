@@ -221,7 +221,7 @@ class VideoExplainerGenerator:
         - Engaging but not distracting from text overlays
         - Use consistent color palette throughout
 
-        The image should tell the story visually while providing clear, uncluttered spaces for text overlays.
+        The html should tell the story visually while providing clear, uncluttered spaces for text overlays.
         """
 
         return enhancement_template.strip()
@@ -231,12 +231,12 @@ class VideoExplainerGenerator:
         Enhance image prompts for better generation quality
 
         Args:
-            segments: List of video segments with basic image prompts
+            segments: List of video segments with basic html prompts
 
         Returns:
-            Enhanced segments with improved image prompts
+            Enhanced segments with improved html prompts
         """
-        print("🎨 Enhancing image prompts for better generation...")
+        print("🎨 Enhancing html prompts for better generation...")
 
         # Simple enhancement - just enhance the prompts without complex AI calls
         enhanced_segments = []

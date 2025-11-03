@@ -7,6 +7,7 @@ from playwright.async_api import async_playwright
 
 class ImageGenerator:
     API_URL = "https://dev.slidexy.net/api/vidGenImg"
+    # API_URL="http://192.168.0.177:5000/api/vidGenImg"
 
     def __init__(self, output_dir=None):
         self.output_dir = Path(output_dir) if output_dir else Path("video_segments")
@@ -66,6 +67,7 @@ Constraints:
                     json={"prompt": final_prompt, "useReferences": True},
                     timeout=60
                 )
+                print(f"📡 API_URL using: {self.API_URL}")
                 print(f"📡 API Status: {response.status_code}")
                 print(f"📄 API Raw Response: {response.text[:500]}...")
                 response.raise_for_status()
