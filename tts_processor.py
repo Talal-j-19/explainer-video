@@ -287,7 +287,7 @@ class TTSProcessor:
     
     def generate_all_audio(self, tts_service: str = 'gtts', **kwargs) -> List[Dict]:
         """
-        Generate audio for all narration segments
+        Generate audio for all narration segments - PARALLEL VERSION
         
         Args:
             tts_service: TTS service to use
@@ -296,7 +296,10 @@ class TTSProcessor:
         Returns:
             List of narration data with audio generation results
         """
-        print(f"🎵 GENERATING AUDIO FOR ALL SEGMENTS")
+        import asyncio
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
+        print(f"🎵 GENERATING AUDIO FOR ALL SEGMENTS (PARALLEL)")
         print(f"=" * 50)
         print(f"TTS Service: {tts_service}")
         print(f"Output Directory: {self.audio_output_dir}")
@@ -309,23 +312,45 @@ class TTSProcessor:
             print("❌ No narration files found to process")
             return []
         
-        # Generate audio for each segment
+        # Generate audio in parallel using ThreadPoolExecutor
+        # Use min(8, len(narrations)) to avoid excessive threads
+        max_workers = min(8, len(cleaned_narrations))
         success_count = 0
-        for narration_data in cleaned_narrations:
-            success = self.generate_audio_for_segment(narration_data, tts_service, **kwargs)
-            if success:
-                success_count += 1
         
-        # Generate complete audio file
+        print(f"⚡ Using {max_workers} parallel workers for audio generation...")
+        print(f"   📊 Estimated speedup: ~{max_workers}x vs sequential\\n")
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all audio generation tasks
+            futures = {
+                executor.submit(
+                    self.generate_audio_for_segment, 
+                    narration_data, 
+                    tts_service, 
+                    **kwargs
+                ): narration_data for narration_data in cleaned_narrations
+            }
+            
+            # Process completed tasks as they finish
+            for future in as_completed(futures):
+                try:
+                    success = future.result()
+                    if success:
+                        success_count += 1
+                except Exception as e:
+                    print(f"   ❌ Error: {e}")
+        
+        # Generate complete audio file (sequential after all segments done)
         complete_audio_success = self._generate_complete_audio(cleaned_narrations, tts_service, **kwargs)
         
         # Print summary
         print(f"\n" + "=" * 50)
-        print(f"📊 AUDIO GENERATION SUMMARY")
+        print(f"📊 AUDIO GENERATION SUMMARY (PARALLEL)")
         print(f"=" * 50)
         print(f"Total segments: {len(cleaned_narrations)}")
         print(f"Successful audio: {success_count}")
         print(f"Complete audio: {'✅' if complete_audio_success else '❌'}")
+        print(f"Parallel workers used: {max_workers}")
         print(f"Output directory: {self.audio_output_dir}")
         
         return cleaned_narrations

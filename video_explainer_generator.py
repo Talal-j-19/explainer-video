@@ -7,22 +7,30 @@ Takes text content and creates video segments with generated background images a
 import os
 import json
 import time
+import logging
 from pathlib import Path
 from dotenv import load_dotenv
 import google.generativeai as genai
+
+# Suppress gRPC warnings
+os.environ['GRPC_VERBOSITY'] = 'ERROR'
+os.environ['GCLOUD_PYTHON_LOGGING_LEVEL'] = 'ERROR'
+logging.getLogger('grpc').setLevel(logging.ERROR)
+logging.getLogger('googleapis.gapic').setLevel(logging.ERROR)
 
 
 class VideoExplainerGenerator:
     """Generate explainer video segments from text content"""
     
     def __init__(self, output_dir=None):
-        # Load environment variables
-        load_dotenv()
+        # Load environment variables from parent directory
+        env_path = Path(__file__).parent.parent.parent / ".env"
+        load_dotenv(env_path)
         
         # Configure Gemini API
-        api_key = os.getenv("GOOGLE_API_KEY")
+        api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("API_KEY1")
         if not api_key:
-            raise Exception("GOOGLE_API_KEY environment variable not set.")
+            raise Exception("GOOGLE_API_KEY or API_KEY1 environment variable not set.")
         genai.configure(api_key=api_key)
         
         # Create output directory
@@ -43,36 +51,52 @@ class VideoExplainerGenerator:
         """
         print("🔍 Analyzing text content for video segments...")
 
-        # Auto-calculate segments if not provided (aim for 5-7 seconds per segment for more dynamic videos)
+        # Auto-calculate segments if not provided
+        # Reserve 7 seconds for opening (4s) and closing (3s) pages
+        content_duration = max(10, target_duration - 7)
+        
         if segments_count is None:
-            segments_count = max(5, min(20, target_duration // 5))
+            # Aim for 5-6 seconds per segment
+            segments_count = max(3, min(15, content_duration // 5))
 
-        system_prompt = """
+        # Calculate target duration per segment
+        seconds_per_segment = content_duration // segments_count
+        
+        system_prompt = f"""
         You are an expert video script writer and visual content strategist. Your task is to analyze text content and create structured video segments with detailed image generation prompts.
 
         CRITICAL: You must respond with ONLY a valid JSON array. No explanations, no markdown, no extra text.
 
         Required JSON format - each segment must have these exact fields:
         - segment_number: Integer (1, 2, 3...)
-        - title: String (short, descriptive title)
-        - narration_text: String (conversational text for TTS, 1-2 sentences)
+        - title: String (short, descriptive title - max 5 words)
+        - narration_text: String (CONCISE text for TTS - MAXIMUM 10-12 words, approximately {seconds_per_segment} seconds when spoken)
         - key_points: Array of strings (main concepts to highlight)
         - image_prompt: String (detailed prompt for AI image generation)
-        - text_overlay: String (short text for on-screen display)
-        - duration_seconds: Integer (5-7 seconds per segment for dynamic pacing)
+        - text_overlay: String (short text for on-screen display - max 3 words)
+        - duration_seconds: Integer (target {seconds_per_segment} seconds per segment)
+
+        CRITICAL NARRATION CONSTRAINTS:
+        - Each narration_text MUST be 10-12 words maximum
+        - At normal speaking pace (150 words/min), this creates ~{seconds_per_segment} second audio
+        - Keep sentences SHORT and PUNCHY
+        - Focus on ONE key concept per segment
+        - Total video content must be exactly {content_duration} seconds
 
         EXAMPLE OUTPUT FORMAT:
         [
-          {
+          {{
             "segment_number": 1,
             "title": "Introduction to AI",
             "narration_text": "Artificial intelligence is transforming how we work and live.",
             "key_points": ["AI transformation", "workplace impact", "daily life"],
             "image_prompt": "Modern office scene with AI-related visual elements: computer screens showing data analytics, robotic arm, neural network diagrams, and productivity charts. Professional blue and white color scheme with clear areas for text overlays at top and bottom",
             "text_overlay": "AI TRANSFORMATION",
-            "duration_seconds": 6
-          }
+            "duration_seconds": {seconds_per_segment}
+          }}
         ]
+        
+        NOTE: The example narration "Artificial intelligence is transforming how we work and live" is exactly 11 words - this is the MAXIMUM length.
 
         For image_prompt, create detailed, specific prompts for INFORMATIVE explainer video images:
         - Describe specific visual elements that represent the content (icons, diagrams, charts, illustrations)
@@ -89,19 +113,25 @@ class VideoExplainerGenerator:
             "task": "analyze_text_for_video_segments",
             "text_content": text_content,
             "segments_count": segments_count,
-            "target_duration": target_duration,
+            "target_duration": content_duration,
+            "seconds_per_segment": seconds_per_segment,
             "requirements": [
                 "Create logical, flowing segments",
                 "Each segment covers one main concept",
-                "Suitable for 5-7 seconds of narration",
+                f"CRITICAL: Narration MUST be {seconds_per_segment} seconds (10-12 words maximum)",
                 "Include detailed image generation prompts",
-                "Professional, educational tone"
+                "Professional, educational tone",
+                f"Total content duration MUST be exactly {content_duration} seconds"
             ]
         }
 
         model = genai.GenerativeModel(
             "gemini-2.5-flash",
-            system_instruction=system_prompt
+            system_instruction=system_prompt,
+            generation_config={
+                "temperature": 0.7,
+                "max_output_tokens": 4096,
+            }
         )
 
         response = model.generate_content(json.dumps(user_prompt, indent=2))
@@ -161,15 +191,59 @@ class VideoExplainerGenerator:
                 fixed_result = re.sub(r',\s*]', ']', fixed_result)
                 # Fix missing commas between objects
                 fixed_result = re.sub(r'}\s*{', '},{', fixed_result)
+                # Fix incomplete strings
+                fixed_result = re.sub(r'"([^"]*?)(\n|$)', r'"\1"', fixed_result)
 
                 segments = json.loads(fixed_result)
                 print(f"✅ Fixed JSON and created {len(segments)} segments")
                 return segments
             except json.JSONDecodeError as e2:
                 print(f"❌ Could not fix JSON: {e2}")
-                print(f"Final attempt - showing problematic area:")
-                print(result[max(0, len(result)//2-100):len(result)//2+100])
-                return None
+                
+                # Last resort: try to extract complete objects from the partial JSON
+                try:
+                    # Find all complete JSON objects
+                    objects = []
+                    depth = 0
+                    current_obj = ""
+                    
+                    for char in result:
+                        if char == '{':
+                            if depth == 0:
+                                current_obj = "{"
+                            else:
+                                current_obj += char
+                            depth += 1
+                        elif char == '}':
+                            depth -= 1
+                            current_obj += char
+                            if depth == 0 and current_obj:
+                                try:
+                                    obj = json.loads(current_obj)
+                                    objects.append(obj)
+                                except:
+                                    pass
+                                current_obj = ""
+                        else:
+                            if depth > 0:
+                                current_obj += char
+                    
+                    if objects and len(objects) >= 3:
+                        print(f"✅ Extracted {len(objects)} partial segments from malformed response")
+                        return objects
+                except Exception as e3:
+                    pass
+                
+                # Final fallback: Generate a basic script structure
+                print(f"⚠️  Falling back to basic segment generation")
+                try:
+                    segments = self._generate_basic_segments(text_content, segments_count, seconds_per_segment)
+                    print(f"✅ Generated {len(segments)} basic segments")
+                    return segments
+                except:
+                    print(f"Final attempt - showing problematic area:")
+                    print(result[max(0, len(result)//2-100):len(result)//2+100])
+                    return None
     
     def enhance_single_prompt(self, original_prompt):
         """

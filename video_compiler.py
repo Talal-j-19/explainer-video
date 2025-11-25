@@ -48,6 +48,14 @@ class VideoCompiler:
                 '-of', 'csv=p=0', audio_file
             ]
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            if result.returncode == 0 and result.stdout.strip():
+                return float(result.stdout.strip())
+            else:
+                print(f"   ⚠️  Could not determine duration, using default 5 seconds")
+                return 5.0
+        except (subprocess.TimeoutExpired, ValueError, FileNotFoundError):
+            print(f"   ⚠️  Duration detection failed, using default 5 seconds")
+            return 5.0
             if result.returncode == 0:
                 return float(result.stdout.strip())
             else:
@@ -60,7 +68,7 @@ class VideoCompiler:
     def compile_segment(self, segment_num: int, background_image: str, 
                        audio_file: str, output_file: str) -> bool:
         """
-        Compile a single video segment
+        Compile a single video segment - OPTIMIZED to prevent hangs
         
         Args:
             segment_num: Segment number
@@ -77,47 +85,67 @@ class VideoCompiler:
         duration = self.get_segment_duration(audio_file)
         print(f"   ⏱️  Audio duration: {duration:.2f} seconds")
         
-        # Create FFmpeg command for segment
+        # Ensure output directory exists
+        Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+        
+        # Create FFmpeg command for segment - SIMPLIFIED & FASTER
         cmd = [
             'ffmpeg', '-y',  # Overwrite output files
             '-loop', '1',     # Loop the image
             '-i', background_image,  # Input image
             '-i', audio_file,        # Input audio
-            '-c:v', self.video_codec,  # Video codec
-            '-c:a', self.audio_codec,  # Audio codec
-            '-pix_fmt', 'yuv420p',     # Pixel format for compatibility
-            '-shortest',                # End when shortest input ends
-            '-t', str(duration),        # Duration limit
-            '-vf', f'scale={int(self.video_width)}:{int(self.video_height)}:force_original_aspect_ratio=decrease,pad={int(self.video_width)}:{int(self.video_height)}:(ow-iw)/2:(oh-ih)/2:black',
-            '-r', str(self.fps),        # Frame rate
-            '-b:v', '2M',               # Video bitrate
-            '-b:a', '128k',             # Audio bitrate
+            '-c:v', 'libx264',       # Video codec
+            '-c:a', 'aac',           # Audio codec
+            '-pix_fmt', 'yuv420p',   # Pixel format
+            '-movflags', '+faststart',  # Enable streaming
+            '-filter:v', f'scale={int(self.video_width)}:{int(self.video_height)}:force_original_aspect_ratio=decrease,pad={int(self.video_width)}:{int(self.video_height)}:(ow-iw)/2:(oh-ih)/2:black',
+            '-r', str(self.fps),     # Frame rate
+            '-t', f'{duration:.1f}',  # Duration - EXPLICIT TIME LIMIT
+            '-b:v', '1500k',         # Reduced bitrate for speed
+            '-b:a', '96k',           # Reduced audio bitrate
+            '-preset', 'ultrafast',  # FASTER ENCODING
             output_file
         ]
         
         try:
             print(f"   🎯 Output: {Path(output_file).name}")
-            print(f"   🔧 FFmpeg command: {' '.join(cmd)}")
+            print(f"   ⚡ Using ultrafast preset for faster encoding")
             
-            # Run FFmpeg
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            # Run FFmpeg with shorter timeout (2 min max per segment)
+            # 60 seconds = ~4x the audio duration, should be more than enough
+            timeout_seconds = max(120, int(duration * 5))
+            print(f"   ⏱️  Timeout: {timeout_seconds}s")
+            
+            result = subprocess.run(
+                cmd, 
+                capture_output=True, 
+                text=True, 
+                timeout=timeout_seconds
+            )
             
             if result.returncode == 0:
                 # Verify output file
-                if Path(output_file).exists() and Path(output_file).stat().st_size > 0:
-                    file_size = Path(output_file).stat().st_size
-                    print(f"   ✅ Segment {segment_num} compiled successfully ({file_size} bytes)")
+                output_path = Path(output_file)
+                if output_path.exists() and output_path.stat().st_size > 0:
+                    file_size = output_path.stat().st_size / 1024 / 1024  # MB
+                    print(f"   ✅ Segment {segment_num} compiled successfully ({file_size:.1f} MB)")
                     return True
                 else:
                     print(f"   ❌ Segment {segment_num} output file invalid")
+                    if result.stderr:
+                        print(f"   Details: {result.stderr[:200]}")
                     return False
             else:
-                print(f"   ❌ Segment {segment_num} compilation failed")
-                print(f"   Error: {result.stderr}")
+                print(f"   ❌ Segment {segment_num} compilation failed (exit code: {result.returncode})")
+                if result.stderr:
+                    # Show last 200 chars of error
+                    error_msg = result.stderr[-200:] if len(result.stderr) > 200 else result.stderr
+                    print(f"   Error: {error_msg}")
                 return False
                 
         except subprocess.TimeoutExpired:
-            print(f"   ❌ Segment {segment_num} compilation timed out")
+            print(f"   ❌ Segment {segment_num} compilation TIMEOUT ({timeout_seconds}s)")
+            print(f"   💡 Tip: Check if FFmpeg is hanging on the image loop")
             return False
         except Exception as e:
             print(f"   ❌ Segment {segment_num} compilation error: {e}")
@@ -159,12 +187,16 @@ class VideoCompiler:
             return []
         
         print(f"📋 Found {len(segments)} segments to compile")
+        print(f"⚡ Note: Segments compile sequentially (1 at a time)")
+        print(f"   Estimated time: ~{len(segments) * 30}s for 12 segments (4-10s each)")
+        print()
         
         # Compile each segment
         compiled_segments = []
         success_count = 0
+        compile_times = []
         
-        for segment in segments:
+        for idx, segment in enumerate(segments, 1):
             segment_num = segment['segment_number']
             
             # Get file paths
@@ -172,27 +204,36 @@ class VideoCompiler:
             audio_file = self.video_segments_dir / "audio" / f"segment_{segment_num:02d}_audio.mp3"
             
             if not background_image or not Path(background_image).exists():
-                print(f"   ❌ Segment {segment_num}: Background image not found")
+                print(f"   [{idx}/{len(segments)}] ❌ Segment {segment_num}: Background image not found")
                 continue
                 
             if not audio_file.exists():
-                print(f"   ❌ Segment {segment_num}: Audio file not found")
+                print(f"   [{idx}/{len(segments)}] ❌ Segment {segment_num}: Audio file not found")
                 continue
             
             # Output file (always in job folder)
             output_file = self.output_dir / f"segment_{segment_num:02d}_video.mp4"
             
             # Compile segment
+            import time as time_module
+            seg_start = time_module.time()
             if self.compile_segment(segment_num, background_image, str(audio_file), str(output_file)):
+                seg_time = time_module.time() - seg_start
+                compile_times.append(seg_time)
                 compiled_segments.append(str(output_file))
                 success_count += 1
+                print(f"   [{idx}/{len(segments)}] ✅ Segment {segment_num} done in {seg_time:.1f}s")
             else:
-                print(f"   ❌ Segment {segment_num} compilation failed")
+                seg_time = time_module.time() - seg_start
+                print(f"   [{idx}/{len(segments)}] ❌ Segment {segment_num} failed after {seg_time:.1f}s")
         
         print(f"\n📊 Segment compilation summary:")
         print(f"   Total segments: {len(segments)}")
         print(f"   Successful: {success_count}")
         print(f"   Failed: {len(segments) - success_count}")
+        if compile_times:
+            print(f"   Avg time/segment: {sum(compile_times)/len(compile_times):.1f}s")
+            print(f"   Total compilation time: {sum(compile_times):.1f}s")
         
         return compiled_segments
     
@@ -210,7 +251,7 @@ class VideoCompiler:
     
     def concatenate_videos(self, video_files: List[str], output_file: str) -> bool:
         """
-        Concatenate all video segments into final video
+        Concatenate all video segments into final video - OPTIMIZED
         
         Args:
             video_files: List of video file paths
@@ -231,26 +272,42 @@ class VideoCompiler:
         list_file = self.create_video_list_file(video_files)
         print(f"📋 Created video list file: {Path(list_file).name}")
         
-        # FFmpeg concatenation command
+        # Ensure output directory exists
+        Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+        
+        # FFmpeg concatenation command - FAST (copy, no re-encode)
         cmd = [
             'ffmpeg', '-y',  # Overwrite output
             '-f', 'concat',   # Use concat demuxer
             '-safe', '0',     # Allow unsafe file paths
             '-i', list_file,  # Input list file
-            '-c', 'copy',      # Copy streams without re-encoding
+            '-c', 'copy',      # Copy streams without re-encoding (FAST!)
+            '-movflags', '+faststart',  # Enable streaming
             output_file
         ]
         
         try:
-            print("🔧 Running FFmpeg concatenation...")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            print("🔧 Running FFmpeg concatenation (fast copy mode)...")
+            
+            # Concatenation should be fast since we're not re-encoding
+            # Estimate: ~1 min per 500MB video
+            timeout_seconds = 300  # 5 minutes max
+            print(f"   ⏱️  Timeout: {timeout_seconds}s")
+            
+            result = subprocess.run(
+                cmd, 
+                capture_output=True, 
+                text=True, 
+                timeout=timeout_seconds
+            )
             
             if result.returncode == 0:
-                if Path(output_file).exists() and Path(output_file).stat().st_size > 0:
-                    file_size = Path(output_file).stat().st_size
+                output_path = Path(output_file)
+                if output_path.exists() and output_path.stat().st_size > 0:
+                    file_size_mb = output_path.stat().st_size / 1024 / 1024
                     print(f"✅ Video concatenation successful!")
-                    print(f"   📁 Output file: {Path(output_file).name}")
-                    print(f"   📊 File size: {file_size} bytes")
+                    print(f"   📁 Output file: {output_path.name}")
+                    print(f"   📊 File size: {file_size_mb:.1f} MB")
                     
                     # Clean up list file
                     try:
@@ -262,11 +319,24 @@ class VideoCompiler:
                     return True
                 else:
                     print(f"❌ Output file invalid after concatenation")
+                    if result.stderr:
+                        error_msg = result.stderr[-200:] if len(result.stderr) > 200 else result.stderr
+                        print(f"   Details: {error_msg}")
                     return False
             else:
-                print(f"❌ Video concatenation failed")
-                print(f"   Error: {result.stderr}")
+                print(f"❌ Video concatenation failed (exit code: {result.returncode})")
+                if result.stderr:
+                    error_msg = result.stderr[-200:] if len(result.stderr) > 200 else result.stderr
+                    print(f"   Error: {error_msg}")
                 return False
+                
+        except subprocess.TimeoutExpired:
+            print(f"❌ Video concatenation TIMEOUT ({timeout_seconds}s)")
+            print(f"   💡 Video file too large or system too slow")
+            return False
+        except Exception as e:
+            print(f"❌ Video concatenation error: {e}")
+            return False
                 
         except subprocess.TimeoutExpired:
             print(f"❌ Video concatenation timed out")
