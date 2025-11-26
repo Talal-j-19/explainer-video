@@ -4,14 +4,35 @@ import requests
 from pathlib import Path
 import asyncio
 from playwright.async_api import async_playwright
+import socket
+import sys
+
+def get_windows_host_ip():
+    """
+    Detect Windows host IP when running inside WSL.
+    Falls back to localhost if detection fails.
+    """
+    if sys.platform.startswith("linux") and "microsoft" in open("/proc/version").read().lower():
+        # Read resolv.conf nameserver (default WSL bridge)
+        try:
+            with open("/etc/resolv.conf") as f:
+                for line in f:
+                    if line.startswith("nameserver"):
+                        return line.split()[1]
+        except Exception:
+            pass
+    return "localhost"
 
 class ImageGenerator:
-    API_URL = "https://dev.slidexy.net/api/vidGenImg"
-    # API_URL="http://192.168.0.177:5000/api/vidGenImg"
+    INFOGRAPHIC_ENDPOINT = "/api/explainer-infographic"
 
     def __init__(self, output_dir=None):
         self.output_dir = Path(output_dir) if output_dir else Path("video_segments")
         self.output_dir.mkdir(exist_ok=True)
+
+        # Use environment variable or auto-detect Windows host IP for WSL
+        base_url = os.getenv("API_BASE_URL")
+        self.API_URL = base_url if base_url else f"http://{get_windows_host_ip()}:5001{self.INFOGRAPHIC_ENDPOINT}"
 
     async def render_html_to_png(self, html_content, output_path):
         async with async_playwright() as p:
@@ -49,7 +70,7 @@ class ImageGenerator:
             image_prompt = segment.get('image_prompt', '')
             print(f"📝 Using prompt: {image_prompt[:100]}...")
 
-            # Enforce strict no-text and high-contrast constraints while keeping references enabled
+            # Enforce strict constraints
             constraint_suffix = """
 Constraints:
 - Do NOT include placeholders like {title}, {subtitle}, lorem ipsum, or any words/labels.
@@ -62,14 +83,13 @@ Constraints:
             output_path = self.output_dir / f"segment_{segment_num:02d}_background.png"
 
             try:
+                print(f"📡 Sending request to API: {self.API_URL}")
                 response = requests.post(
                     self.API_URL,
                     json={"prompt": final_prompt, "useReferences": True},
                     timeout=60
                 )
-                print(f"📡 API_URL using: {self.API_URL}")
                 print(f"📡 API Status: {response.status_code}")
-                print(f"📄 API Raw Response: {response.text[:500]}...")
                 response.raise_for_status()
 
                 data = response.json()
@@ -95,6 +115,7 @@ Constraints:
             except Exception as e:
                 print(f"❌ Failed to generate infographic for segment {segment_num}: {e}")
 
+        # Save updated script
         with open(script_path, 'w', encoding='utf-8') as f:
             json.dump(script, f, indent=2, ensure_ascii=False)
 
@@ -106,11 +127,10 @@ Constraints:
 
 def main():
     import argparse
-    import sys
-    
+
     if sys.platform.startswith("win"):
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-        
+
     parser = argparse.ArgumentParser(description='Generate background images for video explainer')
     parser.add_argument('script_path', help='Path to video script JSON file')
     args = parser.parse_args()
@@ -126,4 +146,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-    

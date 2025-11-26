@@ -23,7 +23,7 @@ from dotenv import load_dotenv
 import requests
 
 # Load environment variables from main directory
-env_path = Path(__file__).parent.parent.parent / '.env'
+env_path = Path(__file__).parent / '.env'
 if env_path.exists():
     load_dotenv(env_path)
 else:
@@ -37,7 +37,7 @@ class IntegratedImageGenerator:
     """
     
     # API Configuration
-    API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:5001")
+    API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:5000")
     INFOGRAPHIC_ENDPOINT = "/api/explainer-infographic"
     
     def __init__(self, output_dir: Optional[str] = None, use_content_only: bool = True):
@@ -160,7 +160,7 @@ const infographicExplainerService = require('./generateInfographicExplainerServi
 """
             
             # Write temporary script in the services/unit-services directory
-            services_dir = Path(__file__).parent.parent / "unit-services"
+            services_dir = Path(__file__).parent / "unit-services"
             with tempfile.NamedTemporaryFile(
                 mode='w',
                 suffix='.js',
@@ -296,7 +296,6 @@ const infographicExplainerService = require('./generateInfographicExplainerServi
                 
         except requests.exceptions.ConnectionError as e:
             print(f"   ❌ Connection error: Cannot reach {self.api_url}")
-            print(f"      Make sure the API server is running on port 5001")
             return None
         except requests.exceptions.Timeout:
             print(f"   ❌ Request timeout: API took too long to respond")

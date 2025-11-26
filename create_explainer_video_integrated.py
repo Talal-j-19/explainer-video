@@ -26,7 +26,7 @@ import time
 from dotenv import load_dotenv
 
 # Load environment variables from main directory
-env_path = Path(__file__).parent.parent.parent / '.env'
+env_path = Path(__file__).parent / '.env'
 if env_path.exists():
     load_dotenv(env_path)
 else:
@@ -204,20 +204,20 @@ class IntegratedExplainerVideoCreator(ExplainerVideoCreator):
                         print(f"✅ Created narration file: segment_{segment_num:02d}_narration.txt")
             
             # Step 2: Generate images using integrated system
-            print("\n2️⃣ GENERATING INFOGRAPHICS (Template-Based V2)")
-            print("-" * 70)
+            # print("\n2️⃣ GENERATING INFOGRAPHICS (Template-Based V2)")
+            # print("-" * 70)
             
-            if self.use_integrated and self.image_generator:
-                images_success = await self.image_generator.generate_images_for_script(
-                    str(script_path),
-                    topic=prompt  # Pass topic for consistent color scheme
-                )
+            # if self.use_integrated and self.image_generator:
+            #     images_success = await self.image_generator.generate_images_for_script(
+            #         str(script_path),
+            #         topic=prompt  # Pass topic for consistent color scheme
+            #     )
                 
-                if not images_success:
-                    print("⚠️ Some images failed, continuing...")
-            else:
-                print("⚠️ Integrated mode disabled")
-                images_success = False
+            #     if not images_success:
+            #         print("⚠️ Some images failed, continuing...")
+            # else:
+            #     print("⚠️ Integrated mode disabled")
+            #     images_success = False
             
             # Step 3: Generate audio
             print("\n3️⃣ GENERATING AUDIO")

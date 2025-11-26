@@ -24,7 +24,7 @@ if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 # Load environment variables
-env_path = Path(__file__).resolve().parent.parent.parent / '.env'
+env_path = Path(__file__).resolve().parent / '.env'
 if env_path.exists():
     load_dotenv(env_path)
 
@@ -48,7 +48,7 @@ videos_dir.mkdir(parents=True, exist_ok=True)
 class VideoRequest(BaseModel):
     prompt: str
     target_duration: int = 60
-    color_scheme: str = None
+    color_scheme: str = "techBlue"
 
 
 

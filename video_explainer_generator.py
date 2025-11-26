@@ -24,7 +24,7 @@ class VideoExplainerGenerator:
     
     def __init__(self, output_dir=None):
         # Load environment variables from parent directory
-        env_path = Path(__file__).parent.parent.parent / ".env"
+        env_path = Path(__file__).parent / ".env"
         load_dotenv(env_path)
         
         # Configure Gemini API
