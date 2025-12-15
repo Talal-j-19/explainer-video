@@ -14,6 +14,7 @@ import sys
 import asyncio
 import os
 import logging
+import boto3
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -61,8 +62,14 @@ videos_dir.mkdir(parents=True, exist_ok=True)
 # ✅ Input schema
 class VideoRequest(BaseModel):
     prompt: str
-    target_duration: int = 60
+    target_duration: int = 30
     color_scheme: str = "techBlue"
+
+
+def update_progress(job_id: str, value: int, message: str = None):
+    jobs[job_id]["progress"] = value
+    if message:
+        jobs[job_id]["message"] = message
 
 
 @app.post("/generate")
@@ -82,15 +89,17 @@ async def generate_video(req: VideoRequest):
         jobs[job_id]["status"] = JobStatus.running
         jobs[job_id]["progress"] = 5
         try:
-            # Original video generation code
-            creator = IntegratedExplainerVideoCreator(use_integrated=True)
-            jobs[job_id]["progress"] = 10
-            result = await creator.generate_video_with_integrated_images(
-                prompt=req.prompt,
-                target_duration=req.target_duration,
-                output_dir=str(videos_dir)
-            )
-            jobs[job_id]["progress"] = 50
+            def _blocking_job():
+                creator = IntegratedExplainerVideoCreator(use_integrated=True)
+                return creator.generate_video_sync(
+                    prompt=req.prompt,
+                    target_duration=req.target_duration,
+                    output_dir=str(videos_dir),
+                    color_scheme=req.color_scheme, 
+                    progress_callback=lambda p, m=None: update_progress(job_id, p, m)
+                )
+
+            result = await asyncio.to_thread(_blocking_job)
 
             if not result.get('success'):
                 jobs[job_id]["status"] = JobStatus.failed
@@ -113,7 +122,6 @@ async def generate_video(req: VideoRequest):
             presign_expiry = int(os.getenv("S3_PRESIGN_EXPIRY", str(7*24*3600)))
 
             if do_key and do_secret and do_endpoint and do_bucket:
-                import boto3
                 s3_client = boto3.client(
                     "s3",
                     region_name=os.getenv("SPACEREGION", None),
@@ -131,7 +139,6 @@ async def generate_video(req: VideoRequest):
                         ExtraArgs={"ContentType": "video/mp4", "ACL": "private"}
                     )
                 await asyncio.to_thread(_upload)
-                jobs[job_id]["progress"] = 80
 
                 def _presign():
                     return s3_client.generate_presigned_url(
@@ -142,8 +149,6 @@ async def generate_video(req: VideoRequest):
                 s3_url = await asyncio.to_thread(_presign)
             else:
                 s3_url = str(local_video_path)
-                jobs[job_id]["progress"] = 90
-
 
             jobs[job_id]["status"] = JobStatus.success
             jobs[job_id]["progress"] = 100

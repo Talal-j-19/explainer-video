@@ -71,8 +71,10 @@ class IntegratedExplainerVideoCreator(ExplainerVideoCreator):
     async def generate_video_with_integrated_images(
         self,
         prompt: str,
+        color_scheme: str,
         target_duration: int = 60,
-        output_dir: str = "generated_videos"
+        output_dir: str = "generated_videos",
+        progress_callback=None
     ) -> dict:
         """
         Generate complete explainer video using integrated infographics
@@ -113,6 +115,8 @@ class IntegratedExplainerVideoCreator(ExplainerVideoCreator):
             script_path = result['script_path']
             script = result['script']
             print(f"✅ Script created: {script_path}")
+            if progress_callback:
+                progress_callback(10, "Script generated")
             
             # Copy script to job directory
             import shutil
@@ -188,6 +192,9 @@ class IntegratedExplainerVideoCreator(ExplainerVideoCreator):
             with open(script_path, 'w') as f:
                 json.dump(script_data, f, indent=2)
             print(f"✅ Added opening and closing segments to script")
+            if progress_callback:
+                progress_callback(20, "Opening & closing generated")
+
             
             # Create narration files from all segments
             print("📝 Extracting narration from script (including opening/closing)...")
@@ -210,7 +217,8 @@ class IntegratedExplainerVideoCreator(ExplainerVideoCreator):
             if self.use_integrated and self.image_generator:
                 images_success = await self.image_generator.generate_images_for_script(
                     str(script_path),
-                    topic=prompt  # Pass topic for consistent color scheme
+                    topic=prompt,
+                    color_scheme=color_scheme
                 )
                 
                 if not images_success:
@@ -218,6 +226,10 @@ class IntegratedExplainerVideoCreator(ExplainerVideoCreator):
             else:
                 print("⚠️ Integrated mode disabled")
                 images_success = False
+            
+            if progress_callback:
+                progress_callback(50, "Infographics generated")
+
             
             # Step 3: Generate audio
             print("\n3️⃣ GENERATING AUDIO")
@@ -229,6 +241,9 @@ class IntegratedExplainerVideoCreator(ExplainerVideoCreator):
             
             if not audio_success:
                 print("⚠️ Audio generation had issues")
+
+            if progress_callback:
+                progress_callback(60, "Audio generated")
             
             # Step 4: Update script with image paths and prepare for compilation
             print("\n4️⃣ PREPARING FOR VIDEO COMPILATION")
@@ -302,6 +317,9 @@ class IntegratedExplainerVideoCreator(ExplainerVideoCreator):
                     json.dump(updated_segments, f, indent=2)
             
             print(f"✅ Prepared script with image paths: {segments_script}")
+
+            if progress_callback:
+                progress_callback(80, "Compiling video")
             
             # Step 5: Compile video
             print("\n5️⃣ COMPILING VIDEO")
@@ -316,6 +334,9 @@ class IntegratedExplainerVideoCreator(ExplainerVideoCreator):
             print("\n" + "="*70)
             print("✅ VIDEO GENERATION COMPLETE")
             print("="*70)
+
+            if progress_callback:
+                progress_callback(100, "Video ready")
             
             result = {
                 "success": final_video is not None,
@@ -346,6 +367,25 @@ class IntegratedExplainerVideoCreator(ExplainerVideoCreator):
                 "error": str(e),
                 "using_integrated": self.use_integrated
             }
+
+    def generate_video_sync(
+    self,
+    prompt: str,
+    target_duration: int = 30,
+    output_dir: str = "generated_videos",
+    color_scheme: str = "techBlue", 
+    progress_callback=None
+    ) -> dict:
+
+        return asyncio.run(
+            self.generate_video_with_integrated_images(
+                prompt=prompt,
+                color_scheme=color_scheme,
+                target_duration=target_duration,
+                output_dir=output_dir,
+                progress_callback=progress_callback
+                )
+        )
 
 
 async def main():
@@ -386,7 +426,7 @@ async def main():
         prompt=args.prompt,
         target_duration=args.duration,
         output_dir=args.output_dir
-    )
+   )
     
     # Exit with appropriate code
     sys.exit(0 if result.get('success') else 1)

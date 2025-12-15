@@ -1,26 +1,22 @@
 #!/usr/bin/env python3
 """
 Integrated Image Generator for Explainer Videos
-Uses the new template-based infographic system instead of external API
-
-This module replaces the external getVidGenImg API calls with direct integration
-of the Node.js generateInfographicV2Service through subprocess calls.
+Uses the new template-based infographic system via HTTP API for optimal performance.
 
 Architecture:
-  Script Segment → Image Prompt → generateInfographicV2Service → HTML → Playwright → PNG
+  Script Segment → Image Prompt → HTTP API → HTML → Playwright → PNG
 """
 
 import os
 import json
-import subprocess
-import tempfile
+import asyncio
 from pathlib import Path
 from typing import Optional, Dict, Any
-import asyncio
 from playwright.async_api import async_playwright
-import time
 from dotenv import load_dotenv
 import requests
+import time
+
 
 # Load environment variables from main directory
 env_path = Path(__file__).parent / '.env'
@@ -32,197 +28,29 @@ else:
 
 class IntegratedImageGenerator:
     """
-    Generate infographic images using the template-based V2 system
-    Integrates directly with generateInfographicV2Service
+    Generate infographic images using the template-based V2 system via HTTP API
     """
     
     # API Configuration
     API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:5000")
     INFOGRAPHIC_ENDPOINT = "/api/explainer-infographic"
     
-    def __init__(self, output_dir: Optional[str] = None, use_content_only: bool = True):
+    def __init__(self, output_dir: Optional[str] = None, use_content_only: bool = False):
         """
         Initialize the integrated image generator
         
         Args:
             output_dir: Directory to save generated images
-            use_content_only: If True, extract just content without outer wrapper
+            use_content_only: Legacy parameter, ignored
         """
         self.output_dir = Path(output_dir) if output_dir else Path("video_segments")
         self.output_dir.mkdir(exist_ok=True)
         
-        self.use_content_only = use_content_only
         self.api_url = f"{self.API_BASE_URL}{self.INFOGRAPHIC_ENDPOINT}"
         
         print(f"📁 Output directory: {self.output_dir}")
         print(f"🔗 API endpoint: {self.api_url}")
-        print(f"📦 Content-only mode: {self.use_content_only}")
     
-    def check_node_environment(self) -> bool:
-        """Check if Node.js environment is available"""
-        try:
-            result = subprocess.run(
-                ['node', '--version'],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            if result.returncode == 0:
-                node_version = result.stdout.strip()
-                print(f"✅ Node.js available: {node_version}")
-                return True
-            else:
-                print("❌ Node.js check failed")
-                return False
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            print("❌ Node.js not found in PATH")
-            return False
-    
-    def generate_infographic_via_service(
-        self, 
-        prompt: str,
-        view_mode: str = "landscape",
-        preferred_layout: Optional[str] = None,
-        color_scheme: Optional[str] = None
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Generate infographic using the Node.js Explainer service
-        
-        Args:
-            prompt: Topic/text for infographic generation
-            view_mode: 'landscape' or 'portrait'
-            preferred_layout: Optional preferred layout type
-            color_scheme: Optional color scheme name (e.g., 'techBlue', 'forestGreen')
-            preferred_layout: Optional layout hint (cards, timeline, comparison, list, process-flow, chart, hierarchy)
-            
-        Returns:
-            Dictionary with { success, html, data, meta } or None if failed
-        """
-        # Add layout hint to prompt if provided
-        if preferred_layout:
-            layout_hints = {
-                'cards': 'Display as separate cards with icons, each highlighting a distinct concept',
-                'timeline': 'Show chronologically as a timeline with events or sequential steps',
-                'comparison': 'Present as a side-by-side comparison showing contrasts or alternatives',
-                'list': 'Organize as a structured list with numbered or bulleted key points',
-                'process-flow': 'Visualize as a step-by-step process flow with arrows and stages',
-                'chart': 'Represent with charts, graphs, or data visualization elements',
-                'hierarchy': 'Structure as a hierarchical diagram showing levels or relationships'
-            }
-            hint = layout_hints.get(preferred_layout, '')
-            if hint:
-                prompt = f"{prompt}. {hint}"
-        try:
-            # Create a temporary Node.js script to call the service
-            # Suppress console output by redirecting it
-            
-            # Escape backticks in prompt
-            escaped_prompt = prompt.replace("`", "\\`")
-            
-            # Build options object
-            options_str = ""
-            if color_scheme:
-                options_str = f", {{ colorScheme: '{color_scheme}' }}"
-            
-            script_content = f"""
-// Suppress console output
-const originalLog = console.log;
-const originalError = console.error;
-console.log = () => {{}};
-console.error = () => {{}};
-
-const infographicExplainerService = require('./generateInfographicExplainerService');
-
-(async () => {{
-  try {{
-    const result = await infographicExplainerService.generateInfographic(
-      `{escaped_prompt}`,
-      '{view_mode}'{options_str}
-    );
-    
-    // Restore console to output JSON
-    console.log = originalLog;
-    console.log(JSON.stringify({{
-      success: true,
-      html: result.html,
-      data: result.data,
-      meta: result.meta
-    }}));
-    
-  }} catch (error) {{
-    console.log = originalLog;
-    console.log(JSON.stringify({{
-      success: false,
-      error: error.message
-    }}));
-  }}
-}})();
-"""
-            
-            # Write temporary script in the services/unit-services directory
-            services_dir = Path(__file__).parent / "unit-services"
-            with tempfile.NamedTemporaryFile(
-                mode='w',
-                suffix='.js',
-                delete=False,
-                dir=str(services_dir)
-            ) as f:
-                f.write(script_content)
-                temp_script = f.name
-            
-            try:
-                # Execute the script from the services/unit-services directory
-                result = subprocess.run(
-                    ['node', temp_script],
-                    capture_output=True,
-                    text=True,
-                    timeout=120,
-                    cwd=str(services_dir)
-                )
-                
-                if result.returncode == 0:
-                    # Parse the JSON output
-                    stdout_content = result.stdout.strip()
-                    if not stdout_content:
-                        print(f"❌ Empty response from service")
-                        if result.stderr:
-                            print(f"Stderr output: {result.stderr[:500]}")
-                        return None
-                        
-                    try:
-                        output = json.loads(stdout_content)
-                        
-                        if output.get('success'):
-                            print(f"✅ Infographic generated successfully")
-                            return output
-                        else:
-                            print(f"❌ Service error: {output.get('error')}")
-                            return None
-                    except json.JSONDecodeError as e:
-                        print(f"❌ JSON parse error: {e}")
-                        print(f"Got response: {stdout_content[:200]}")
-                        return None
-                else:
-                    print(f"❌ Node.js execution failed (return code: {result.returncode})")
-                    if result.stdout:
-                        print(f"Stdout: {result.stdout[:300]}")
-                    if result.stderr:
-                        print(f"Stderr: {result.stderr[:300]}")
-                    return None
-                    
-            finally:
-                # Clean up temp file
-                try:
-                    os.unlink(temp_script)
-                except:
-                    pass
-                    
-        except subprocess.TimeoutExpired:
-            print("❌ Service call timed out")
-            return None
-        except json.JSONDecodeError as e:
-            print(f"❌ Failed to parse service response: {e}")
-            return None
     def generate_infographic_via_service(
         self, 
         prompt: str,
@@ -621,187 +449,6 @@ const infographicExplainerService = require('./generateInfographicExplainerServi
             print(f"❌ Failed to render opening page")
             return None
     
-    async def generate_closing_page(self, topic: str, output_dir: Optional[str] = None) -> Optional[str]:
-        """Generate a modern, elegant closing page for the video"""
-        output_dir = Path(output_dir) if output_dir else self.output_dir
-        
-        print(f"\n🎬 GENERATING CLOSING PAGE")
-        print(f"{'='*60}")
-        
-        closing_html = f"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Closing</title>
-    <style>
-        * {{
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }}
-        
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
-            overflow: hidden;
-        }}
-        
-        .confetti {{
-            position: fixed;
-            width: 100%;
-            height: 100%;
-            top: 0;
-            left: 0;
-            z-index: 1;
-            pointer-events: none;
-        }}
-        
-        .confetti-piece {{
-            position: absolute;
-            width: 10px;
-            height: 10px;
-            background: white;
-            opacity: 0.8;
-            animation: confetti-fall 3s linear forwards;
-        }}
-        
-        @keyframes confetti-fall {{
-            to {{
-                transform: translateY(100vh) rotateZ(720deg);
-                opacity: 0;
-            }}
-        }}
-        
-        .container {{
-            position: relative;
-            z-index: 10;
-            text-align: center;
-            padding: 60px 40px;
-            max-width: 1000px;
-            backdrop-filter: blur(10px);
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
-        }}
-        
-        .icon-wrapper {{
-            margin-bottom: 40px;
-            animation: spin-bounce 2s ease-in-out infinite;
-        }}
-        
-        .icon {{
-            font-size: 100px;
-            filter: drop-shadow(0 0 20px rgba(255, 255, 255, 0.5));
-        }}
-        
-        @keyframes spin-bounce {{
-            0%, 100% {{ transform: rotateZ(0deg) scale(1); }}
-            50% {{ transform: rotateZ(360deg) scale(1.1); }}
-        }}
-        
-        h1 {{
-            font-size: 68px;
-            font-weight: 800;
-            margin-bottom: 20px;
-            color: white;
-            text-shadow: 0 2px 20px rgba(0, 0, 0, 0.2);
-            letter-spacing: -1px;
-        }}
-        
-        .divider {{
-            width: 60px;
-            height: 6px;
-            background: linear-gradient(90deg, transparent, white, transparent);
-            margin: 30px auto;
-            border-radius: 3px;
-        }}
-        
-        .message {{
-            font-size: 22px;
-            color: rgba(255, 255, 255, 0.95);
-            font-weight: 300;
-            margin: 30px 0;
-            line-height: 1.6;
-            animation: slideUp 0.8s ease-out 0.3s both;
-        }}
-        
-        .message strong {{
-            font-weight: 600;
-            color: #ffffff;
-        }}
-        
-        .footer {{
-            font-size: 14px;
-            color: rgba(255, 255, 255, 0.7);
-            margin-top: 40px;
-            letter-spacing: 1px;
-            text-transform: uppercase;
-            font-weight: 500;
-            animation: slideUp 0.8s ease-out 0.6s both;
-        }}
-        
-        @keyframes slideUp {{
-            from {{
-                opacity: 0;
-                transform: translateY(20px);
-            }}
-            to {{
-                opacity: 1;
-                transform: translateY(0);
-            }}
-        }}
-    </style>
-</head>
-<body>
-    <div class="confetti" id="confetti"></div>
-    <div class="container">
-        <div class="icon-wrapper">
-            <div class="icon">✨</div>
-        </div>
-        <h1>Thank You!</h1>
-        <div class="divider"></div>
-        <p class="message">You've just learned about<br><strong>{topic}</strong></p>
-        <p class="footer">Subscribe for more educational content</p>
-    </div>
-    
-    <script>
-        // Create confetti effect
-        const confettiContainer = document.getElementById('confetti');
-        for (let i = 0; i < 30; i++) {{
-            const piece = document.createElement('div');
-            piece.className = 'confetti-piece';
-            piece.style.left = Math.random() * 100 + '%';
-            piece.style.backgroundColor = ['#667eea', '#764ba2', '#f093fb', '#ffffff'][Math.floor(Math.random() * 4)];
-            piece.style.animationDelay = Math.random() * 0.5 + 's';
-            confettiContainer.appendChild(piece);
-        }}
-    </script>
-</body>
-</html>
-"""
-        
-        html_path = output_dir / "closing_page.html"
-        with open(html_path, 'w', encoding='utf-8') as f:
-            f.write(closing_html)
-        print(f"✅ Closing page HTML created")
-        
-        png_path = output_dir / "closing_page.png"
-        success = await self.render_html_to_png(closing_html, str(png_path))
-        
-        if success:
-            print(f"✅ Closing page rendered: {png_path}")
-            return str(png_path)
-        else:
-            print(f"❌ Failed to render closing page")
-            return None
-    
     async def generate_closing_page_with_summary(self, topic: str, output_dir: Optional[str] = None, video_segments: list = None) -> Optional[str]:
         """Generate a professional closing page with summary infographic (new b.html design)"""
         output_dir = Path(output_dir) if output_dir else self.output_dir
@@ -1078,95 +725,20 @@ const infographicExplainerService = require('./generateInfographicExplainerServi
         }
         return color_map.get(gradient_color, 'techBlue')
     
-    async def generate_infographic_async_http(
-        self, 
-        prompt: str,
-        view_mode: str = "landscape",
-        preferred_layout: Optional[str] = None,
-        color_scheme: Optional[str] = None
-    ) -> Optional[Dict]:
-        """
-        Generate infographic asynchronously via HTTP API (better for batch requests)
-        This allows multiple requests to be made concurrently
-        
-        Args:
-            prompt: Image prompt for infographic
-            view_mode: 'landscape' or 'portrait'
-            preferred_layout: Layout type hint
-            color_scheme: Color scheme name
-            
-        Returns:
-            Dict with success, html, data, meta or None if failed
-        """
-        try:
-            import aiohttp
-            
-            # Add layout hint to prompt
-            if preferred_layout:
-                layout_hints = {
-                    'cards': 'Display as separate cards',
-                    'timeline': 'Show as timeline',
-                    'comparison': 'Side-by-side comparison',
-                    'list': 'Structured list format',
-                    'process-flow': 'Step-by-step process',
-                    'chart': 'Charts and graphs',
-                    'hierarchy': 'Hierarchical diagram'
-                }
-                hint = layout_hints.get(preferred_layout, '')
-                if hint:
-                    prompt = f"{prompt}. {hint}"
-            
-            # Prepare request payload
-            payload = {
-                "topic": prompt,
-                "viewMode": view_mode,
-                "colorScheme": color_scheme or "auto"
-            }
-            
-            # Use aiohttp for async HTTP
-            timeout = aiohttp.ClientTimeout(total=60)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(
-                    f"{self.API_BASE_URL}{self.INFOGRAPHIC_ENDPOINT}",
-                    json=payload,
-                    headers={"Content-Type": "application/json"}
-                ) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        return {
-                            'success': data.get('success', False),
-                            'html': data.get('html', ''),
-                            'data': data.get('data', {}),
-                            'meta': data.get('meta', {})
-                        }
-                    else:
-                        print(f"   ❌ HTTP {response.status}")
-                        return None
-        except ImportError:
-            # Fallback to sync version if aiohttp not available
-            return self.generate_infographic_via_service(prompt, view_mode, preferred_layout, color_scheme)
-        except Exception as e:
-            print(f"   ❌ Async HTTP error: {e}")
-            return None
-    
-    async def generate_images_for_script(self, script_path: str, topic: str = None) -> bool:
+    async def generate_images_for_script(self, script_path: str, topic: str = None, color_scheme: str = None) -> bool:
         """
         Generate infographic images for all segments in a script
         
         Args:
             script_path: Path to video script JSON
             topic: Topic for consistent color scheme (optional)
+            color_scheme: Override color scheme (optional)
             
         Returns:
             True if all successful, False otherwise
         """
         print("\n🎨 GENERATING INFOGRAPHIC IMAGES (Template-Based V2)")
         print("=" * 60)
-        
-        # Check Node.js environment
-        if not self.check_node_environment():
-            print("⚠️ Node.js not available, falling back to external API")
-            return False
         
         try:
             with open(script_path, 'r', encoding='utf-8') as f:
@@ -1180,8 +752,10 @@ const infographicExplainerService = require('./generateInfographicExplainerServi
             print("❌ No segments found in script")
             return False
         
-        # Determine consistent color scheme based on topic
-        if topic:
+        # Determine consistent color scheme based on topic or override
+        if color_scheme:
+            consistent_color_scheme = color_scheme
+        elif topic:
             gradient_colors, _ = self._get_topic_gradient(topic)
             consistent_color_scheme = self._get_color_scheme_name_from_gradient(gradient_colors[0])
         else:
@@ -1205,7 +779,7 @@ const infographicExplainerService = require('./generateInfographicExplainerServi
         
         for idx, segment in enumerate(segments):
             segment_num = segment.get('segment_number', 0)
-            title = segment.get('title', 'Untitled')
+            title = segment.get('title', '')
             image_prompt = segment.get('image_prompt', '')
             
             # Rotate through different layout types but keep color consistent
@@ -1259,11 +833,6 @@ const infographicExplainerService = require('./generateInfographicExplainerServi
                 if not html_content:
                     print(f"   ❌ [{segment_num:02d}] No HTML returned")
                     return False
-                
-                # Save HTML
-                html_path = self.output_dir / f"segment_{segment_num:02d}_background.html"
-                with open(html_path, 'w', encoding='utf-8') as f:
-                    f.write(html_content)
                 
                 # Render to PNG (async)
                 png_path = self.output_dir / f"segment_{segment_num:02d}_background.png"
@@ -1320,7 +889,6 @@ const infographicExplainerService = require('./generateInfographicExplainerServi
         
         return success_count == len(segments)
 
-
 async def main():
     """Command line interface"""
     import argparse
@@ -1335,11 +903,6 @@ async def main():
         default='video_segments',
         help='Output directory for generated images'
     )
-    parser.add_argument(
-        '--full-html',
-        action='store_true',
-        help='Include outer HTML wrapper (default: content-only)'
-    )
     
     args = parser.parse_args()
     
@@ -1348,8 +911,7 @@ async def main():
         sys.exit(1)
     
     generator = IntegratedImageGenerator(
-        output_dir=args.output_dir,
-        use_content_only=not args.full_html
+        output_dir=args.output_dir
     )
     
     success = await generator.generate_images_for_script(args.script_path)
