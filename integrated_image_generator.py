@@ -32,7 +32,7 @@ class IntegratedImageGenerator:
     """
     
     # API Configuration
-    API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:5000")
+    API_BASE_URL = os.getenv("API_BASE_URL", "http://172.18.160.1:5000")
     INFOGRAPHIC_ENDPOINT = "/api/explainer-infographic"
     
     def __init__(self, output_dir: Optional[str] = None, use_content_only: bool = False):
@@ -54,6 +54,7 @@ class IntegratedImageGenerator:
     def generate_infographic_via_service(
         self, 
         prompt: str,
+        slide_type: str,
         view_mode: str = "landscape",
         preferred_layout: Optional[str] = None,
         color_scheme: Optional[str] = None
@@ -86,7 +87,8 @@ class IntegratedImageGenerator:
             # Prepare request payload
             payload = {
                 "topic": prompt,
-                "viewMode": view_mode
+                "viewMode": view_mode,
+                "slideType": slide_type,
             }
             
             # Add color scheme if provided
@@ -169,8 +171,17 @@ class IntegratedImageGenerator:
             print(f"❌ Rendering failed: {e}")
             return False
     
-    def _get_topic_gradient(self, topic: str) -> tuple:
-        """Get gradient colors based on topic keywords"""
+    def _get_topic_gradient(self, topic_or_scheme: str) -> tuple:
+        """
+        Get gradient colors based on topic keywords or scheme name.
+
+        Args:
+            topic_or_scheme (str): Either a topic string (e.g., "AI and tech") 
+                                or a scheme name (e.g., "techBlue").
+
+        Returns:
+            tuple: (gradient_colors, accent_color)
+        """
         # Color schemes with gradients (primary1, primary2, accent)
         color_schemes = {
             'techBlue': (['#caf0f8', '#90e0ef'], '#0077b6'),
@@ -183,9 +194,12 @@ class IntegratedImageGenerator:
             'corporateGold': (['#fff4e6', '#ffe8cc'], '#e67700'),
             'medicalBlue': (['#e0f4ff', '#c6e7ff'], '#0096c7'),
         }
-        
+
+        # If the input is a valid scheme name, return directly
+        if topic_or_scheme in color_schemes:
+            return color_schemes[topic_or_scheme]
+
         # Semantic groups for topic matching (ordered by specificity)
-        # Medical and health-specific keywords checked first to avoid conflicts with general science
         semanticGroups = {
             'medicalBlue': ['health', 'medical', 'medicine', 'hospital', 'doctor', 'healthcare', 'wellness', 'disease', 'treatment', 'patient', 'clinical', 'nurse', 'pharmacy'],
             'culinaryRed': ['food', 'cooking', 'recipe', 'restaurant', 'cuisine', 'chef', 'culinary', 'baking', 'kitchen', 'dish', 'meal', 'appetizer', 'dessert'],
@@ -197,18 +211,18 @@ class IntegratedImageGenerator:
             'scienceBlue': ['science', 'physics', 'chemistry', 'biology', 'laboratory', 'experiment', 'quantum', 'genetic', 'discovery', 'scientific'],
             'corporateGold': ['business', 'corporate', 'company', 'finance', 'money', 'banking', 'market', 'investment', 'entrepreneur', 'startup', 'sales', 'commerce', 'enterprise'],
         }
-        
-        lower_topic = topic.lower()
-        
+
+        lower_topic = topic_or_scheme.lower()
+
         # Match topic to scheme
         for scheme, keywords in semanticGroups.items():
             if any(keyword in lower_topic for keyword in keywords):
                 return color_schemes[scheme]
-        
+
         # Default to techBlue
         return color_schemes['techBlue']
-    
-    async def generate_opening_page(self, topic: str, output_dir: Optional[str] = None) -> Optional[str]:
+
+    async def generate_opening_page(self, topic: str,color_scheme: str, output_dir: Optional[str] = None) -> Optional[str]:
         """Generate a professional opening page using the exact template design with topic-based gradient"""
         output_dir = Path(output_dir) if output_dir else self.output_dir
         
@@ -216,7 +230,7 @@ class IntegratedImageGenerator:
         print(f"{'='*60}")
         
         # Get gradient colors based on topic
-        gradient_colors, accent_color = self._get_topic_gradient(topic)
+        gradient_colors, accent_color = self._get_topic_gradient(color_scheme)
         gradient_start = gradient_colors[0]
         gradient_end = gradient_colors[1]
         
@@ -449,7 +463,7 @@ class IntegratedImageGenerator:
             print(f"❌ Failed to render opening page")
             return None
     
-    async def generate_closing_page_with_summary(self, topic: str, output_dir: Optional[str] = None, video_segments: list = None) -> Optional[str]:
+    async def generate_closing_page_with_summary(self, topic: str,color_scheme: str, output_dir: Optional[str] = None, video_segments: list = None) -> Optional[str]:
         """Generate a professional closing page with summary infographic (new b.html design)"""
         output_dir = Path(output_dir) if output_dir else self.output_dir
         
@@ -457,7 +471,7 @@ class IntegratedImageGenerator:
         print(f"{'='*60}")
         
         # Get gradient colors matching opening page
-        gradient_colors, accent_color = self._get_topic_gradient(topic)
+        gradient_colors, accent_color = self._get_topic_gradient(color_scheme)
         gradient_start = gradient_colors[0]
         gradient_end = gradient_colors[1]
         
@@ -781,6 +795,7 @@ class IntegratedImageGenerator:
             segment_num = segment.get('segment_number', 0)
             title = segment.get('title', '')
             image_prompt = segment.get('image_prompt', '')
+            slide_type = segment.get('slide_type','')
             
             # Rotate through different layout types but keep color consistent
             preferred_layout = layout_rotation[idx % len(layout_rotation)]
@@ -795,6 +810,7 @@ class IntegratedImageGenerator:
                 'segment': segment,
                 'segment_num': segment_num,
                 'title': title,
+                'slide_type' : slide_type,
                 'image_prompt': image_prompt,
                 'preferred_layout': preferred_layout,
                 'preferred_color': consistent_color_scheme,  # Consistent color
@@ -809,6 +825,7 @@ class IntegratedImageGenerator:
             segment = task_data['segment']
             segment_num = task_data['segment_num']
             title = task_data['title']
+            slide_type = task_data['slide_type']
             image_prompt = task_data['image_prompt']
             preferred_layout = task_data['preferred_layout']
             preferred_color = task_data['preferred_color']
@@ -822,7 +839,8 @@ class IntegratedImageGenerator:
                 result = self.generate_infographic_via_service(
                     image_prompt, 
                     preferred_layout=preferred_layout,
-                    color_scheme=preferred_color
+                    color_scheme=preferred_color,
+                    slide_type=slide_type,
                 )
                 
                 if not result or not result.get('success'):

@@ -1,29 +1,18 @@
-#!/usr/bin/env python3
-"""
-Explainer Video with Integrated Template-Based Infographics
-Main entry point that uses the new integrated image generator
-
-This script replaces the need for external API calls by directly using
-the Node.js generateInfographicV2Service for infographic generation.
-
-Usage:
-    python create_explainer_video_integrated.py "Your topic here"
-"""
-
 import os
-import asyncio
 import sys
+import asyncio
 import logging
+import json
+import time
+import shutil
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Suppress gRPC warnings
 os.environ['GRPC_VERBOSITY'] = 'ERROR'
 os.environ['GCLOUD_PYTHON_LOGGING_LEVEL'] = 'ERROR'
 logging.getLogger('grpc').setLevel(logging.ERROR)
 logging.getLogger('googleapis.gapic').setLevel(logging.ERROR)
-import json
-import time
-from dotenv import load_dotenv
 
 # Load environment variables from main directory
 env_path = Path(__file__).parent / '.env'
@@ -32,14 +21,45 @@ if env_path.exists():
 else:
     print(f"⚠️ .env file not found at {env_path}")
 
-# Import the integrated image generator
 from integrated_image_generator import IntegratedImageGenerator
-
-# Import other required modules
-from create_explainer_video import ExplainerVideoCreator
+from video_explainer_generator import VideoExplainerGenerator
 from tts_processor import TTSProcessor
 from video_compiler import VideoCompiler
 from job_manager import InfographicJobManager
+
+
+class ExplainerVideoCreator:   
+    def __init__(self, output_dir=None):
+        self.output_dir = Path(output_dir) if output_dir else Path("video_segments")
+        self.video_generator = VideoExplainerGenerator(self.output_dir)
+        # self.image_generator = ImageGenerator(self.output_dir)
+        self.tts_processor = TTSProcessor(self.output_dir)
+        self.video_compiler = VideoCompiler(self.output_dir)
+         
+    def compile_complete_video(self):
+        """Compile complete explainer video from all segments"""
+        try:
+            print("🎬 Starting video compilation...")
+            
+            # Set video compiler to use our output directory
+            # Must be a Path, not str, because compiler uses Path division with '/'
+            self.video_compiler.video_segments_dir = self.output_dir
+            self.video_compiler.output_dir = self.output_dir 
+            
+            # Compile complete video
+            final_video = self.video_compiler.compile_complete_video()
+            
+            if final_video:
+                print(f"🎉 Video compilation successful!")
+                return final_video
+            else:
+                print("❌ Video compilation failed")
+                return None
+                
+        except Exception as e:
+            print(f"❌ Error during video compilation: {e}")
+            return None
+
 
 
 class IntegratedExplainerVideoCreator(ExplainerVideoCreator):
@@ -140,8 +160,8 @@ class IntegratedExplainerVideoCreator(ExplainerVideoCreator):
             else:
                 segments = []
             
-            opening_page = await self.image_generator.generate_opening_page(prompt, str(job_dir))
-            closing_page = await self.image_generator.generate_closing_page_with_summary(prompt, str(job_dir), segments)
+            opening_page = await self.image_generator.generate_opening_page(prompt,color_scheme, str(job_dir))
+            closing_page = await self.image_generator.generate_closing_page_with_summary(prompt,color_scheme, str(job_dir), segments)
             
             # Load script and add opening/closing segments
             with open(script_path, 'r') as f:
@@ -161,6 +181,7 @@ class IntegratedExplainerVideoCreator(ExplainerVideoCreator):
                 'title': 'Introduction',
                 'narration_text': f'Welcome. In this video, we explore {prompt}. Let\'s dive in.',
                 'duration': 4,
+                'slide_type': 'title',
                 'image_prompt': 'Professional opening title',
                 'background_image': str(opening_page) if opening_page else ''
             }
@@ -171,6 +192,7 @@ class IntegratedExplainerVideoCreator(ExplainerVideoCreator):
                 'title': 'Conclusion',
                 'narration_text': f'Thank you for learning about {prompt}.',
                 'duration': 2,
+                'slide_type': 'summary',
                 'image_prompt': 'Professional closing thank you',
                 'background_image': str(closing_page) if closing_page else ''
             }

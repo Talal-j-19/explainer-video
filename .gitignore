@@ -102,3 +102,8 @@ video_segments/
 text mapping/
 coordinate mapping/
 segment_01_overlay_coords.json
+
+# test files
+test.py
+test_tts.py
+test_tts_5_times.py

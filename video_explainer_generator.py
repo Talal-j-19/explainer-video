@@ -48,6 +48,8 @@ class VideoExplainerGenerator:
 
         Returns:
             List of video segments with content, timing, and image prompts
+            
+            Note: divide segments in such a way that each segment consists of 5 to 6 sec of video
         """
         print("🔍 Analyzing text content for video segments...")
 
@@ -72,9 +74,36 @@ class VideoExplainerGenerator:
         - title: String (short, descriptive title - max 5 words)
         - narration_text: String (CONCISE text for TTS - MAXIMUM 10-12 words, approximately {seconds_per_segment} seconds when spoken)
         - key_points: Array of strings (main concepts to highlight)
+        - slide_type: String (ONE of: cards, timeline, comparison, process-flow, chart, list)
         - image_prompt: String (detailed prompt for AI image generation)
         - text_overlay: String (short text for on-screen display - max 3 words)
         - duration_seconds: Integer (target {seconds_per_segment} seconds per segment)
+
+        slide_type_options = 
+  cards: 
+    description: 'Grid of concept cards',
+    best_for: ['concepts', 'features', 'benefits', 'steps', 'categories'],
+    examples: 'Quantum Computing, Biology Concepts, Features',
+  timeline: 
+    description: 'Chronological sequence',
+    best_for: ['historical', 'chronological', 'timeline', 'evolution', 'process'],
+    examples: 'History of Tech, Project Timeline, Life Cycle',
+  comparison: 
+    description: 'Side-by-side comparison',
+    best_for: ['comparison', 'vs', 'difference', 'pros-cons', 'alternatives'],
+    examples: 'Feature Comparison, Pros vs Cons, Options',
+  'process-flow': 
+    description: 'Sequential process steps',
+    best_for: ['process', 'workflow', 'steps', 'procedure', 'flow', 'stage'],
+    examples: 'Development Process, Manufacturing Steps, User Journey',
+  chart: 
+    description: 'Pie chart with data comparison list',
+    best_for: ['chart', 'data', 'statistics', 'comparison', 'pie', 'visualization', 'percentage'],
+    examples: 'Market Share Analysis, Budget Distribution, Survey Results, Sales Data',
+  list: 
+    description: 'Numbered/bullet list with descriptions',
+    best_for: ['list', 'steps', 'instructions', 'guide', 'procedure'],
+    examples: 'How to Guide, Instructions, Recipe',
 
         CRITICAL NARRATION CONSTRAINTS:
         - Each narration_text MUST be 10-12 words maximum
@@ -90,6 +119,7 @@ class VideoExplainerGenerator:
             "title": "Introduction to AI",
             "narration_text": "Artificial intelligence is transforming how we work and live.",
             "key_points": ["AI transformation", "workplace impact", "daily life"],
+            "slide_type": "cards",
             "image_prompt": "Modern office scene with AI-related visual elements: computer screens showing data analytics, robotic arm, neural network diagrams, and productivity charts. Professional blue and white color scheme with clear areas for text overlays at top and bottom",
             "text_overlay": "AI TRANSFORMATION",
             "duration_seconds": {seconds_per_segment}
@@ -366,6 +396,7 @@ class VideoExplainerGenerator:
                 "narration_text": segment.get('narration_text', ''),
                 "text_overlay": segment.get('text_overlay', ''),
                 "key_points": segment.get('key_points', []),
+                "slide_type": segment.get('slide_type' ''),
                 "image_prompt": segment.get('image_prompt', ''),
                 "duration_seconds": segment.get('duration_seconds', 6),
                 "background_image": image_path,
@@ -376,7 +407,6 @@ class VideoExplainerGenerator:
             }
 
             script["segments"].append(segment_data)
-
         return script
     
     def save_script(self, script, filename="video_script.json"):
@@ -400,6 +430,8 @@ class VideoExplainerGenerator:
         
         Returns:
             Dictionary with complete video plan
+
+            Note: divide segments in such a way that each segment consists of 5 to 6 sec of video
         """
         print("🚀 EXPLAINER VIDEO GENERATOR")
         print("=" * 50)

@@ -18,6 +18,7 @@ import boto3
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from tts_processor import TTSProcessor
 from pydantic import BaseModel
 from pathlib import Path
 import time
@@ -25,6 +26,7 @@ import traceback
 from dotenv import load_dotenv
 import boto3
 from botocore.exceptions import ClientError
+
 
 # Suppress gRPC warnings
 os.environ['GRPC_VERBOSITY'] = 'ERROR'
@@ -174,4 +176,29 @@ async def get_status(job_id: str):
         return {"status": "error", "message": "Job ID not found"}
     return job
 
+# @app.post("/generate_audio")
+# async def generate_audio():
+#     tts = TTSProcessor(video_segments_dir="video_segments")
+#     narrations = tts.clean_all_narrations()
+#     print(f'Narations: {narrations}')
+#     if not narrations:
+#         return {"success": False, "message": "No narration files found"}
+
+#     for narration in narrations:
+#         text = narration["clean_text"].strip()
+#         if not text:
+#             narration["audio_generated"] = False
+#             continue
+#         # Generate audio
+#         narration["audio_generated"] = await tts._generate_edge_tts(
+#             text,
+#             narration["output_audio"],
+#             voice="en-AU-NatashaNeural"
+#         )
+#         if narration["audio_generated"]:
+#             narration["audio_file_size"] = Path(narration["output_audio"]).stat().st_size
+#             narration["tts_service"] = "edge_tts"
+
+#     summary_file = tts.create_audio_summary(narrations)
+#     return {"success": True, "summary_file": summary_file}
 
