@@ -179,22 +179,26 @@ class IntegratedExplainerVideoCreator(ExplainerVideoCreator):
             opening_segment = {
                 'segment_number': 0,
                 'title': 'Introduction',
+                'text_overlay': 'Introduction',
                 'narration_text': f'Welcome. In this video, we explore {prompt}. Let\'s dive in.',
                 'duration': 4,
                 'slide_type': 'title',
                 'image_prompt': 'Professional opening title',
-                'background_image': str(opening_page) if opening_page else ''
+                'background_image': str(opening_page) if opening_page else '',
+                'key_points': ''
             }
             
             # Create closing segment
             closing_segment = {
                 'segment_number': len(segments) + 1,
                 'title': 'Conclusion',
+                'text_overlay': 'Conclusion',
                 'narration_text': f'Thank you for learning about {prompt}.',
                 'duration': 2,
                 'slide_type': 'summary',
                 'image_prompt': 'Professional closing thank you',
-                'background_image': str(closing_page) if closing_page else ''
+                'background_image': str(closing_page) if closing_page else '',
+                'key_points': ''
             }
             
             # Renumber content segments

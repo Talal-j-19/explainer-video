@@ -57,7 +57,11 @@ class IntegratedImageGenerator:
         slide_type: str,
         view_mode: str = "landscape",
         preferred_layout: Optional[str] = None,
-        color_scheme: Optional[str] = None
+        color_scheme: Optional[str] = None,
+        title: Optional[str] = None,
+        text_overlay: Optional[str] = None,
+        narration: Optional[str] = None,
+        key_points: Optional[any] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         Generate infographic using the HTTP API
@@ -67,6 +71,9 @@ class IntegratedImageGenerator:
             view_mode: 'landscape' or 'portrait'
             preferred_layout: Optional preferred layout type
             color_scheme: Optional color scheme name (e.g., 'techBlue', 'forestGreen')
+            title: Optional title text from the script segment
+            text_overlay: Optional text overlay from the script segment
+            narration: Optional narration text from the script segment
         """
         if preferred_layout:
             # Add layout hint to prompt
@@ -91,9 +98,24 @@ class IntegratedImageGenerator:
                 "slideType": slide_type,
             }
             
-            # Add color scheme if provided
+            # Add optional fields if provided
+            if preferred_layout:
+                payload["preferredLayout"] = preferred_layout
             if color_scheme:
                 payload["colorScheme"] = color_scheme
+            if title:
+                payload["title"] = title
+            if text_overlay:
+                payload["textOverlay"] = text_overlay
+            if narration:
+                payload["narration"] = narration
+            if key_points:
+                payload["keyPoints"] = key_points
+
+            # 🔹 Print payload before sending
+            print("📤 Payload being sent to API:")
+            for k, v in payload.items():
+                print(f"  {k}: {v}")
             
             print(f"   🌐 Making API request to {self.api_url}")
             if color_scheme:
@@ -792,10 +814,20 @@ class IntegratedImageGenerator:
         print(f"   📊 Preparing {len(segments)} tasks for parallel execution...")
         
         for idx, segment in enumerate(segments):
+            slide_type = segment.get('slide_type', '')
+    
+            # Skip title/summary slides
+            if slide_type in ('title', 'summary'):
+                print(f"⏭ Skipping segment {segment.get('segment_number', idx)} ({slide_type})")
+                continue
+
             segment_num = segment.get('segment_number', 0)
             title = segment.get('title', '')
             image_prompt = segment.get('image_prompt', '')
             slide_type = segment.get('slide_type','')
+            text_overlay = segment.get('text_overlay', '')  # Extract new field
+            narration = segment.get('narration_text', '')
+            key_points = segment.get('key_points','')  # Extract new field
             
             # Rotate through different layout types but keep color consistent
             preferred_layout = layout_rotation[idx % len(layout_rotation)]
@@ -814,6 +846,9 @@ class IntegratedImageGenerator:
                 'image_prompt': image_prompt,
                 'preferred_layout': preferred_layout,
                 'preferred_color': consistent_color_scheme,  # Consistent color
+                'text_overlay': text_overlay,  # Add new field
+                'narration_text': narration, 
+                'key_points': key_points, # Add new field
                 'idx': idx
             })
         
@@ -829,6 +864,9 @@ class IntegratedImageGenerator:
             image_prompt = task_data['image_prompt']
             preferred_layout = task_data['preferred_layout']
             preferred_color = task_data['preferred_color']
+            text_overlay = task_data.get('text_overlay')  # Extract new field
+            narration = task_data.get('narration_text')  # Extract new field
+            key_points = task_data.get('key_points')
             
             print(f"📍 [{segment_num:02d}] {title} | {preferred_layout} | {preferred_color}")
             
@@ -841,6 +879,10 @@ class IntegratedImageGenerator:
                     preferred_layout=preferred_layout,
                     color_scheme=preferred_color,
                     slide_type=slide_type,
+                    title=title,  # Pass new field
+                    text_overlay=text_overlay,  
+                    narration=narration,
+                    key_points=key_points
                 )
                 
                 if not result or not result.get('success'):

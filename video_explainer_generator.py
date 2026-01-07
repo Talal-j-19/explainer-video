@@ -75,8 +75,8 @@ class VideoExplainerGenerator:
         - narration_text: String (CONCISE text for TTS - MAXIMUM 10-12 words, approximately {seconds_per_segment} seconds when spoken)
         - key_points: Array of strings (main concepts to highlight)
         - slide_type: String (ONE of: cards, timeline, comparison, process-flow, chart, list)
-        - image_prompt: String (detailed prompt for AI image generation)
-        - text_overlay: String (short text for on-screen display - max 3 words)
+        - image_prompt: String (detailed prompt for AI infographic generation mainly the template is getting used so keep narration,overlay text and slide_type in consideration and dont make it image_prompt too big)
+        - text_overlay: String (short text for on-screen display - Must be in sync with the narration_text which will be voiced over)
         - duration_seconds: Integer (target {seconds_per_segment} seconds per segment)
 
         slide_type_options = 
@@ -294,38 +294,6 @@ class VideoExplainerGenerator:
         CONTENT TO VISUALIZE:
         {original_prompt}
 
-        VISUAL REQUIREMENTS:
-        - 16:9 aspect ratio (1920x1080 pixels)
-        - Informative and educational illustration style
-        - Clear visual representation of the concept/topic
-        - Include relevant icons, diagrams, charts, or illustrations
-        - Professional business/educational aesthetic
-        - Modern, clean, engaging design
-
-        TEXT PLACEHOLDER AREAS (CRITICAL):
-        - Reserve the TOP 20% of the image for main title text overlay
-        - Reserve the BOTTOM 15% for subtitle/key points text
-        - These areas should have solid color backgrounds or subtle gradients
-        - High contrast between text areas and visual content for readability
-        - Text areas should be clearly defined rectangular spaces
-        - Avoid placing important visual elements in text areas
-
-        CONTENT-SPECIFIC ELEMENTS:
-        - Use visual metaphors, icons, or diagrams related to the topic
-        - Include relevant infographic elements (charts, arrows, progress bars)
-        - Use colors that match the content theme and mood
-        - Create visual hierarchy that supports the narrative
-        - Show processes, comparisons, or data visualization when relevant
-
-        STYLE GUIDELINES:
-        - Avoid any text or typography in the image itself
-        - Professional, corporate presentation style
-        - Suitable for business/educational explainer videos
-        - Clean, modern illustration or infographic style
-        - Engaging but not distracting from text overlays
-        - Use consistent color palette throughout
-
-        The html should tell the story visually while providing clear, uncluttered spaces for text overlays.
         """
 
         return enhancement_template.strip()

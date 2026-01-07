@@ -36,10 +36,6 @@ logging.getLogger('googleapis.gapic').setLevel(logging.ERROR)
 
 from create_explainer_video_integrated import IntegratedExplainerVideoCreator
 
-# ✅ Windows compatibility
-if sys.platform.startswith("win"):
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
 # Load environment variables
 env_path = Path(__file__).resolve().parent / '.env'
 if env_path.exists():
