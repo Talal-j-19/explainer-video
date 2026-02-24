@@ -767,7 +767,8 @@ class IntegratedImageGenerator:
         topic: str = None, 
         color_scheme: str = None,
         tts_processor = None,
-        job_dir: Path = None
+        job_dir: Path = None,
+        progress_callback = None
     ) -> bool:
         """
         Generate infographic images for all segments in a script
@@ -778,6 +779,7 @@ class IntegratedImageGenerator:
             color_scheme: Override color scheme (optional)
             tts_processor: Optional TTS processor to generate audio in parallel
             job_dir: Optional job directory for audio output
+            progress_callback: Optional callback for progress updates (percent, message)
             
         Returns:
             True if all successful, False otherwise
@@ -877,8 +879,13 @@ class IntegratedImageGenerator:
         # Process segments in parallel batches
         print(f"\n🚀 Processing {len(tasks_data)} segments in parallel (max {max_concurrent} concurrent)...\n")
         
+        # Track progress
+        completed_count = 0
+        total_tasks = len(tasks_data)
+        
         async def process_segment(task_data):
             """Process a single segment: API call + PNG rendering"""
+            nonlocal completed_count
             segment = task_data['segment']
             segment_num = task_data['segment_num']
             title = task_data['title']
@@ -898,6 +905,12 @@ class IntegratedImageGenerator:
                         narration_data, 
                         tts_service='custom_api'
                     )
+                
+                completed_count += 1
+                if progress_callback:
+                    progress = 20 + int((completed_count / total_tasks) * 60)
+                    progress_callback(progress, f"Processing segments: {completed_count}/{total_tasks} complete (audio {completed_count})")
+                
                 return True
 
             slide_type = task_data['slide_type']
@@ -963,6 +976,11 @@ class IntegratedImageGenerator:
                                 narration_data, 
                                 tts_service='custom_api'
                             )
+                    
+                    completed_count += 1
+                    if progress_callback:
+                        progress = 20 + int((completed_count / total_tasks) * 60)
+                        progress_callback(progress, f"Processing segments: {completed_count}/{total_tasks} complete (image & audio {completed_count})")
                     
                     return True
                 else:

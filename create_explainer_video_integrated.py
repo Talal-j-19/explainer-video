@@ -250,7 +250,8 @@ class IntegratedExplainerVideoCreator(ExplainerVideoCreator):
                     topic=prompt,
                     color_scheme=color_scheme,
                     tts_processor=tts_processor,
-                    job_dir=job_dir
+                    job_dir=job_dir,
+                    progress_callback=progress_callback
                 )
                 
                 if not images_success:
@@ -260,7 +261,7 @@ class IntegratedExplainerVideoCreator(ExplainerVideoCreator):
                 images_success = False
             
             if progress_callback:
-                progress_callback(50, "Infographics and Audio generated")
+                progress_callback(80, "All infographics and audio segments processed")
 
             
             # Step 3: Verify Audio and Generate Complete Narration
@@ -282,7 +283,7 @@ class IntegratedExplainerVideoCreator(ExplainerVideoCreator):
                 print("⚠️ Audio generation had issues")
 
             if progress_callback:
-                progress_callback(60, "Audio processing complete")
+                progress_callback(85, f"Audio verification complete: {len(generated_audio_files)} files ready")
             
             # Step 4: Update script with image paths and prepare for compilation
             print("\n4️⃣ PREPARING FOR VIDEO COMPILATION")
@@ -358,7 +359,7 @@ class IntegratedExplainerVideoCreator(ExplainerVideoCreator):
             print(f"✅ Prepared script with image paths: {segments_script}")
 
             if progress_callback:
-                progress_callback(80, "Compiling video")
+                progress_callback(90, "Starting video compilation")
             
             # Step 5: Compile video
             print("\n5️⃣ COMPILING VIDEO")
