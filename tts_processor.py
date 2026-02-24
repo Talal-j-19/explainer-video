@@ -6,9 +6,15 @@ Cleans narration text and generates audio files using multiple TTS services
 
 import os
 import re
+import requests
+import threading
 from pathlib import Path
 from typing import List, Dict, Tuple
 import time
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 
 class TTSProcessor:
@@ -18,13 +24,11 @@ class TTSProcessor:
         self.video_segments_dir = Path(video_segments_dir)
         self.audio_output_dir = self.video_segments_dir / "audio"
         self.audio_output_dir.mkdir(exist_ok=True)
+        self.lock = threading.Lock()
         
         # TTS service configurations
         self.tts_services = {
-            'gtts': self._generate_with_gtts,
-            'edge_tts': self._generate_with_edge_tts,
-            'azure': self._generate_with_azure,
-            'simple': self._generate_simple_audio
+            'custom_api': self._generate_with_custom_api
         }
         
     def clean_narration_text(self, narration_file: Path) -> Tuple[str, Dict]:
@@ -90,7 +94,7 @@ class TTSProcessor:
             else:
                 segment_num = 0
             
-            output_audio = str(self.audio_output_dir / f"segment_{segment_num:02d}_audio.mp3")
+            output_audio = str(self.audio_output_dir / f"segment_{segment_num:02d}_audio.wav")
             narration_data = {
                 'segment_number': segment_num,
                 'file_path': str(narration_file),
@@ -106,151 +110,85 @@ class TTSProcessor:
         print(f"🎉 Cleaned {len(cleaned_narrations)} narration files")
         return cleaned_narrations
     
-    def _generate_with_gtts(self, text: str, output_path: str, **kwargs) -> bool:
-        """Generate audio using Google Text-to-Speech (gTTS)"""
-        try:
-            from gtts import gTTS
-            
-            # Get language from kwargs or default to English
-            lang = kwargs.get('lang', 'en')
-            
-            # Create TTS object
-            tts = gTTS(text=text, lang=lang, slow=False)
-            
-            # Generate and save audio
-            tts.save(output_path)
-            
-            # Verify file was created
-            if Path(output_path).exists() and Path(output_path).stat().st_size > 0:
-                print(f"   ✅ gTTS: {Path(output_path).name}")
-                return True
-            else:
-                print(f"   ❌ gTTS: Failed to create valid audio file")
-                return False
+    def _generate_with_custom_api(self, text: str, output_path: str, **kwargs) -> bool:
+        """Generate audio using custom API from environment variables with retries and timeout"""
+        max_retries = 3
+        retry_delay = 10  # Increased delay to allow server restart
+        timeout = 300  # 5 minutes timeout for long narrations
+        
+        for attempt in range(max_retries):
+            try:
+                url = os.getenv("TTS_API_URL", "http://147.182.254.9:9020")
+                payload = {
+                    "profile_id": kwargs.get("profile_id", "ea3538c4-89b9-4d71-a1f8-537d9f313ada"),
+                    "text": text,
+                    "language": kwargs.get("language", "en"),
+                    "seed": kwargs.get("seed", 0),
+                    "model_size": kwargs.get("model_size", "0.6B"),
+                    "instruct": kwargs.get("instruct", "string")
+                }
                 
-        except ImportError:
-            print("   ❌ gTTS: Package not installed. Install with: pip install gtts")
-            return False
-        except Exception as e:
-            print(f"   ❌ gTTS: Error - {e}")
-            return False
-    
-    def _generate_with_edge_tts(self, text: str, output_path: str, **kwargs) -> bool:
-        """Generate audio using Microsoft Edge TTS (edge-tts)"""
-        try:
-            import edge_tts
-            
-            # Get voice from kwargs or use default
-            voice = kwargs.get('voice', 'en-US-AriaNeural')
-            
-            # Create TTS object
-            tts = edge_tts.Communicate(text, voice)
-            
-            # Generate and save audio
-            tts.save(output_path)
-            
-            # Verify file was created
-            if Path(output_path).exists() and Path(output_path).stat().st_size > 0:
-                print(f"   ✅ Edge TTS: {Path(output_path).name}")
-                return True
-            else:
-                print(f"   ❌ Edge TTS: Failed to create valid audio file")
-                return False
+                # Step 1: Generate
+                if attempt > 0:
+                    print(f"   🔄 Retrying Custom API (Attempt {attempt + 1}/{max_retries}) after error...")
+                    # If we got connection refused, the server might be restarting. Wait longer.
+                    time.sleep(retry_delay * attempt)
                 
-        except ImportError:
-            print("   ❌ Edge TTS: Package not installed. Install with: pip install edge-tts")
-            return False
-        except Exception as e:
-            print(f"   ❌ Edge TTS: Error - {e}")
-            return False
-    
-    def _generate_with_azure(self, text: str, output_path: str, **kwargs) -> bool:
-        """Generate audio using Azure Cognitive Services TTS"""
-        try:
-            import azure.cognitiveservices.speech as speechsdk
-            
-            # Get Azure credentials from environment
-            speech_key = os.getenv("AZURE_SPEECH_KEY")
-            service_region = os.getenv("AZURE_SPEECH_REGION")
-            
-            if not speech_key or not service_region:
-                print("   ❌ Azure: Missing AZURE_SPEECH_KEY or AZURE_SPEECH_REGION environment variables")
-                return False
-            
-            # Configure speech config
-            speech_config = speechsdk.SpeechConfig(
-                subscription=speech_key, 
-                region=service_region
-            )
-            
-            # Get voice from kwargs or use default
-            voice = kwargs.get('voice', 'en-US-AriaNeural')
-            speech_config.speech_synthesis_voice_name = voice
-            
-            # Configure audio output
-            audio_config = speechsdk.audio.AudioOutputConfig(filename=output_path)
-            
-            # Create synthesizer
-            synthesizer = speechsdk.SpeechSynthesizer(
-                speech_config=speech_config, 
-                audio_config=audio_config
-            )
-            
-            # Synthesize speech
-            result = synthesizer.speak_text_async(text).get()
-            
-            if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
-                print(f"   ✅ Azure TTS: {Path(output_path).name}")
-                return True
-            else:
-                print(f"   ❌ Azure TTS: {result.reason}")
-                return False
+                print(f"   📡 Connecting to TTS API: {url}/generate")
+                response = requests.post(f"{url}/generate", json=payload, timeout=timeout)
+                response.raise_for_status()
+                data = response.json()
+                generation_id = data.get("id")
                 
-        except ImportError:
-            print("   ❌ Azure TTS: Package not installed. Install with: pip install azure-cognitiveservices-speech")
-            return False
-        except Exception as e:
-            print(f"   ❌ Azure TTS: Error - {e}")
-            return False
-    
-    def _generate_simple_audio(self, text: str, output_path: str, **kwargs) -> bool:
-        """Generate simple beep audio as fallback (for testing)"""
-        try:
-            import numpy as np
-            from scipy.io import wavfile
-            
-            # Create a simple beep sound
-            sample_rate = 22050
-            duration = 2.0  # 2 seconds
-            frequency = 440  # A4 note
-            
-            t = np.linspace(0, duration, int(sample_rate * duration), False)
-            audio = np.sin(2 * np.pi * frequency * t) * 0.3
-            
-            # Convert to 16-bit PCM
-            audio = (audio * 32767).astype(np.int16)
-            
-            # Save as WAV (convert to MP3 later if needed)
-            wav_path = output_path.replace('.mp3', '.wav')
-            wavfile.write(wav_path, sample_rate, audio)
-            
-            print(f"   ⚠️  Simple Audio: {Path(wav_path).name} (beep sound)")
-            return True
-            
-        except ImportError:
-            print("   ❌ Simple Audio: Missing numpy/scipy. Install with: pip install numpy scipy")
-            return False
-        except Exception as e:
-            print(f"   ❌ Simple Audio: Error - {e}")
-            return False
-    
-    def generate_audio_for_segment(self, narration_data: Dict, tts_service: str = 'gtts', **kwargs) -> bool:
+                if not generation_id:
+                    print(f"   ❌ Custom API: No generation ID in response")
+                    if attempt < max_retries - 1:
+                        continue
+                    return False
+                
+                # Small wait for the server to process the audio file
+                # The voicebox-api needs time to generate the wav file before we download it
+                time.sleep(5) 
+                
+                # Step 2: Download
+                print(f"   📥 Downloading audio: {generation_id}")
+                audio_response = requests.get(f"{url}/audio/{generation_id}", timeout=timeout)
+                audio_response.raise_for_status()
+                
+                with open(output_path, 'wb') as f:
+                    f.write(audio_response.content)
+                
+                if Path(output_path).exists() and Path(output_path).stat().st_size > 0:
+                    print(f"   ✅ Custom API success: {Path(output_path).name} ({Path(output_path).stat().st_size} bytes)")
+                    return True
+                else:
+                    print(f"   ❌ Custom API: Failed to create valid audio file")
+                    if attempt < max_retries - 1:
+                        continue
+                    return False
+                    
+            except requests.exceptions.ConnectionError as e:
+                print(f"   ⚠️ Custom API Connection Error (Server might be restarting): {e}")
+                if attempt < max_retries - 1:
+                    print(f"   ⏳ Waiting {retry_delay * (attempt + 1)}s before next attempt...")
+                    time.sleep(retry_delay * (attempt + 1))
+                else:
+                    return False
+            except Exception as e:
+                print(f"   ❌ Custom API: Error on attempt {attempt + 1}: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                else:
+                    return False
+        return False
+
+    def generate_audio_for_segment(self, narration_data: Dict, tts_service: str = 'custom_api', **kwargs) -> bool:
         """
-        Generate audio for a single narration segment
+        Generate audio for a single narration segment with existence check
         
         Args:
             narration_data: Dictionary with segment information
-            tts_service: TTS service to use ('gtts', 'edge_tts', 'azure', 'simple')
+            tts_service: TTS service to use ('custom_api')
             **kwargs: Additional arguments for TTS service
             
         Returns:
@@ -260,6 +198,13 @@ class TTSProcessor:
         clean_text = narration_data['clean_text']
         output_path = narration_data['output_audio']
         
+        # Check if file already exists and is valid
+        if Path(output_path).exists() and Path(output_path).stat().st_size > 0:
+            print(f"   ⏭️  Audio for Segment {segment_num} already exists, skipping.")
+            narration_data['audio_generated'] = True
+            narration_data['audio_file'] = output_path
+            return True
+            
         print(f"\n🎵 Generating audio for Segment {segment_num}...")
         print(f"   📝 Text: {clean_text[:80]}...")
         print(f"   🎯 Output: {Path(output_path).name}")
@@ -268,8 +213,9 @@ class TTSProcessor:
             print(f"   ❌ Unknown TTS service: {tts_service}")
             return False
         
-        # Generate audio using selected service
-        success = self.tts_services[tts_service](clean_text, output_path, **kwargs)
+        # Generate audio using selected service with thread lock
+        with self.lock:
+            success = self.tts_services[tts_service](clean_text, output_path, **kwargs)
         
         if success:
             # Update narration data with audio file info
@@ -285,12 +231,13 @@ class TTSProcessor:
         
         return success
     
-    def generate_all_audio(self, tts_service: str = 'gtts', **kwargs) -> List[Dict]:
+    def generate_all_audio(self, tts_service: str = 'custom_api', generate_complete: bool = False, **kwargs) -> List[Dict]:
         """
         Generate audio for all narration segments - PARALLEL VERSION
         
         Args:
             tts_service: TTS service to use
+            generate_complete: Whether to generate a combined audio file of all segments
             **kwargs: Additional arguments for TTS service
             
         Returns:
@@ -299,7 +246,7 @@ class TTSProcessor:
         import asyncio
         from concurrent.futures import ThreadPoolExecutor, as_completed
         
-        print(f"🎵 GENERATING AUDIO FOR ALL SEGMENTS (PARALLEL)")
+        print(f"🎵 VERIFYING AUDIO SEGMENTS")
         print(f"=" * 50)
         print(f"TTS Service: {tts_service}")
         print(f"Output Directory: {self.audio_output_dir}")
@@ -312,13 +259,11 @@ class TTSProcessor:
             print("❌ No narration files found to process")
             return []
         
-        # Generate audio in parallel using ThreadPoolExecutor
-        # Use min(8, len(narrations)) to avoid excessive threads
-        max_workers = min(8, len(cleaned_narrations))
-        success_count = 0
+        # DEBUG: Force sequential processing for ALL services to isolate issues
+        # The custom API server (147.182.254.9) crashes when hit with parallel requests
+        max_workers = 1
         
-        print(f"⚡ Using {max_workers} parallel workers for audio generation...")
-        print(f"   📊 Estimated speedup: ~{max_workers}x vs sequential\\n")
+        success_count = 0
         
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit all audio generation tasks
@@ -340,17 +285,19 @@ class TTSProcessor:
                 except Exception as e:
                     print(f"   ❌ Error: {e}")
         
-        # Generate complete audio file (sequential after all segments done)
-        complete_audio_success = self._generate_complete_audio(cleaned_narrations, tts_service, **kwargs)
+        # Generate complete audio file only if requested
+        complete_audio_success = False
+        if generate_complete:
+            complete_audio_success = self._generate_complete_audio(cleaned_narrations, tts_service, **kwargs)
         
         # Print summary
         print(f"\n" + "=" * 50)
-        print(f"📊 AUDIO GENERATION SUMMARY (PARALLEL)")
+        print(f"📊 AUDIO GENERATION SUMMARY")
         print(f"=" * 50)
         print(f"Total segments: {len(cleaned_narrations)}")
         print(f"Successful audio: {success_count}")
-        print(f"Complete audio: {'✅' if complete_audio_success else '❌'}")
-        print(f"Parallel workers used: {max_workers}")
+        if generate_complete:
+            print(f"Complete audio: {'✅' if complete_audio_success else '❌'}")
         print(f"Output directory: {self.audio_output_dir}")
         
         return cleaned_narrations
@@ -369,7 +316,7 @@ class TTSProcessor:
             complete_text = " ".join([n['clean_text'] for n in audio_files])
             
             # Generate complete audio
-            complete_audio_path = self.audio_output_dir / "complete_narration_audio.mp3"
+            complete_audio_path = self.audio_output_dir / "complete_narration_audio.wav"
             
             print(f"\n🎵 Generating complete narration audio...")
             print(f"   📝 Combined text length: {len(complete_text)} characters")
@@ -422,7 +369,7 @@ class TTSProcessor:
                 f.write("\n")
             
             # Check for complete audio
-            complete_audio = self.audio_output_dir / "complete_narration_audio.mp3"
+            complete_audio = self.audio_output_dir / "complete_narration_audio.wav"
             if complete_audio.exists():
                 file_size = complete_audio.stat().st_size
                 f.write(f"## Complete Audio\n\n")
@@ -445,8 +392,8 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='Generate audio from video narration files')
-    parser.add_argument('--service', choices=['gtts', 'edge_tts', 'azure', 'simple'], 
-                       default='gtts', help='TTS service to use')
+    parser.add_argument('--service', choices=['custom_api'], 
+                       default='custom_api', help='TTS service to use')
     parser.add_argument('--lang', default='en', help='Language code (for gTTS)')
     parser.add_argument('--voice', default='en-US-AriaNeural', help='Voice (for Edge TTS/Azure)')
     parser.add_argument('--clean-only', action='store_true', help='Only clean text, don\'t generate audio')

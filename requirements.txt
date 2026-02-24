@@ -38,7 +38,6 @@ decorator==4.4.2
 defusedxml==0.7.1
 distro==1.9.0
 docopt==0.6.2
-edge-tts==7.2.3
 einops==0.8.1
 encodec==0.1.1
 fastapi==0.104.1
@@ -64,7 +63,6 @@ gruut_lang_de==2.0.1
 gruut_lang_en==2.0.1
 gruut_lang_es==2.0.1
 gruut_lang_fr==2.0.2
-gTTS==2.5.3
 h11==0.16.0
 hangul-romanize==0.1.0
 hf-xet==1.2.0

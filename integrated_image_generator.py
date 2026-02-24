@@ -761,7 +761,14 @@ class IntegratedImageGenerator:
         }
         return color_map.get(gradient_color, 'techBlue')
     
-    async def generate_images_for_script(self, script_path: str, topic: str = None, color_scheme: str = None) -> bool:
+    async def generate_images_for_script(
+        self, 
+        script_path: str, 
+        topic: str = None, 
+        color_scheme: str = None,
+        tts_processor = None,
+        job_dir: Path = None
+    ) -> bool:
         """
         Generate infographic images for all segments in a script
         
@@ -769,12 +776,17 @@ class IntegratedImageGenerator:
             script_path: Path to video script JSON
             topic: Topic for consistent color scheme (optional)
             color_scheme: Override color scheme (optional)
+            tts_processor: Optional TTS processor to generate audio in parallel
+            job_dir: Optional job directory for audio output
             
         Returns:
             True if all successful, False otherwise
         """
         print("\n🎨 GENERATING INFOGRAPHIC IMAGES (Template-Based V2)")
         print("=" * 60)
+        
+        if tts_processor:
+            print("🎙️ Staggered Audio Generation enabled: Audio will be generated as images complete.")
         
         try:
             with open(script_path, 'r', encoding='utf-8') as f:
@@ -814,15 +826,25 @@ class IntegratedImageGenerator:
         print(f"   📊 Preparing {len(segments)} tasks for parallel execution...")
         
         for idx, segment in enumerate(segments):
+            segment_num = segment.get('segment_number', idx)
+            title = segment.get('title', f"Segment {segment_num}")
             slide_type = segment.get('slide_type', '')
     
-            # Skip title/summary slides
+            # Skip title/summary slides for image generation, but we might still want audio
             if slide_type in ('title', 'summary'):
-                print(f"⏭ Skipping segment {segment.get('segment_number', idx)} ({slide_type})")
+                if tts_processor and job_dir:
+                    # Special case: process audio only for these segments
+                    tasks_data.append({
+                        'segment': segment,
+                        'segment_num': segment_num,
+                        'audio_only': True,
+                        'title': title
+                    })
+                    print(f"🎙️ [{segment_num:02d}] Added to audio queue ({slide_type})")
+                else:
+                    print(f"⏭ Skipping segment {segment_num} ({slide_type})")
                 continue
 
-            segment_num = segment.get('segment_number', 0)
-            title = segment.get('title', '')
             image_prompt = segment.get('image_prompt', '')
             slide_type = segment.get('slide_type','')
             text_overlay = segment.get('text_overlay', '')  # Extract new field
@@ -860,6 +882,24 @@ class IntegratedImageGenerator:
             segment = task_data['segment']
             segment_num = task_data['segment_num']
             title = task_data['title']
+            
+            # Handle audio-only segments (title/summary slides)
+            if task_data.get('audio_only'):
+                if tts_processor and job_dir:
+                    narration_data = {
+                        'segment_number': segment_num,
+                        'clean_text': segment.get('narration_text', ''),
+                        'output_audio': str(job_dir / "audio" / f"segment_{segment_num:02d}_audio.wav")
+                    }
+                    (job_dir / "audio").mkdir(exist_ok=True)
+                    print(f"🎙️ [{segment_num:02d}] Audio-only segment: {title}")
+                    await asyncio.to_thread(
+                        tts_processor.generate_audio_for_segment, 
+                        narration_data, 
+                        tts_service='custom_api'
+                    )
+                return True
+
             slide_type = task_data['slide_type']
             image_prompt = task_data['image_prompt']
             preferred_layout = task_data['preferred_layout']
@@ -902,6 +942,28 @@ class IntegratedImageGenerator:
                     segment['background_image'] = str(png_path)
                     elapsed = time.time() - start_time
                     print(f"   ✅ [{segment_num:02d}] Complete in {elapsed:.1f}s")
+                    
+                    # Generate audio for this segment immediately (Staggered Load)
+                    if tts_processor and job_dir:
+                        narration_file = job_dir / f"segment_{segment_num:02d}_narration.txt"
+                        if narration_file.exists():
+                            # Prepare narration data structure for the processor
+                            narration_data = {
+                                'segment_number': segment_num,
+                                'clean_text': segment.get('narration_text', ''),
+                                'output_audio': str(job_dir / "audio" / f"segment_{segment_num:02d}_audio.wav")
+                            }
+                            # Ensure audio dir exists
+                            (job_dir / "audio").mkdir(exist_ok=True)
+                            
+                            print(f"   🎙️ [{segment_num:02d}] Triggering audio generation...")
+                            # Run synchronous audio gen in a thread to not block image parallelization
+                            await asyncio.to_thread(
+                                tts_processor.generate_audio_for_segment, 
+                                narration_data, 
+                                tts_service='custom_api'
+                            )
+                    
                     return True
                 else:
                     print(f"   ❌ [{segment_num:02d}] PNG rendering failed")

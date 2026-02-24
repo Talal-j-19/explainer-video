@@ -201,7 +201,7 @@ class VideoCompiler:
             
             # Get file paths
             background_image = segment.get('background_image', '')
-            audio_file = self.video_segments_dir / "audio" / f"segment_{segment_num:02d}_audio.mp3"
+            audio_file = self.video_segments_dir / "audio" / f"segment_{segment_num:02d}_audio.wav"
             
             if not background_image or not Path(background_image).exists():
                 print(f"   [{idx}/{len(segments)}] ❌ Segment {segment_num}: Background image not found")

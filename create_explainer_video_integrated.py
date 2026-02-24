@@ -236,15 +236,21 @@ class IntegratedExplainerVideoCreator(ExplainerVideoCreator):
                             f.write(narration_text)
                         print(f"✅ Created narration file: segment_{segment_num:02d}_narration.txt")
             
+            # Initialize TTS Processor early for staggered audio generation
+            tts_processor = TTSProcessor(video_segments_dir=str(job_dir))
+            
             # Step 2: Generate images using integrated system
-            print("\n2️⃣ GENERATING INFOGRAPHICS (Template-Based V2)")
+            print("\n2️⃣ GENERATING INFOGRAPHICS & STAGGERED AUDIO")
             print("-" * 70)
             
             if self.use_integrated and self.image_generator:
+                # We pass the tts_processor to generate audio as each image completes
                 images_success = await self.image_generator.generate_images_for_script(
                     str(script_path),
                     topic=prompt,
-                    color_scheme=color_scheme
+                    color_scheme=color_scheme,
+                    tts_processor=tts_processor,
+                    job_dir=job_dir
                 )
                 
                 if not images_success:
@@ -254,22 +260,29 @@ class IntegratedExplainerVideoCreator(ExplainerVideoCreator):
                 images_success = False
             
             if progress_callback:
-                progress_callback(50, "Infographics generated")
+                progress_callback(50, "Infographics and Audio generated")
 
             
-            # Step 3: Generate audio
-            print("\n3️⃣ GENERATING AUDIO")
+            # Step 3: Verify Audio and Generate Complete Narration
+            print("\n3️⃣ VERIFYING AUDIO & GENERATING COMPLETE NARRATION")
             print("-" * 70)
             
-            tts_processor = TTSProcessor(video_segments_dir=str(job_dir))
-            audio_results = tts_processor.generate_all_audio(tts_service='gtts')
-            audio_success = len(audio_results) > 0
+            # Check how many audio files were actually generated in the job_dir/audio
+            audio_dir = job_dir / "audio"
+            generated_audio_files = list(audio_dir.glob("segment_*.wav"))
+            audio_success = len(generated_audio_files) > 0
+            
+            print(f"📊 Audio generation status: {len(generated_audio_files)} segments generated")
+            
+            # Verify audio segments and prepare data structure
+            # We set generate_complete=False because the combined audio is not needed for video compilation
+            audio_results = tts_processor.generate_all_audio(tts_service='custom_api', generate_complete=False)
             
             if not audio_success:
                 print("⚠️ Audio generation had issues")
 
             if progress_callback:
-                progress_callback(60, "Audio generated")
+                progress_callback(60, "Audio processing complete")
             
             # Step 4: Update script with image paths and prepare for compilation
             print("\n4️⃣ PREPARING FOR VIDEO COMPILATION")
@@ -285,7 +298,7 @@ class IntegratedExplainerVideoCreator(ExplainerVideoCreator):
             
             audio_dir = job_dir / "audio"
             if audio_dir.exists():
-                for audio_file in audio_dir.glob("segment_*.mp3"):
+                for audio_file in audio_dir.glob("segment_*.wav"):
                     shutil.copy(audio_file, audio_segments_dir / audio_file.name)
                 print(f"✅ Copied audio files to segments/audio/")
             
