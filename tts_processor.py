@@ -12,9 +12,25 @@ from pathlib import Path
 from typing import List, Dict, Tuple
 import time
 from dotenv import load_dotenv
+try:
+    import google.genai as genai
+    from google.genai import types
+    GENAI_NEW = True
+except ImportError:
+    import google.generativeai as genai
+    GENAI_NEW = False
+import base64
+import io
+from pydub import AudioSegment
 
 # Load environment variables
 load_dotenv()
+
+# Configure Google GenAI
+if GENAI_NEW:
+    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+else:
+    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 
 class TTSProcessor:
@@ -28,7 +44,7 @@ class TTSProcessor:
         
         # TTS service configurations
         self.tts_services = {
-            'custom_api': self._generate_with_custom_api
+            'gemini_tts': self._generate_with_gemini_tts
         }
         
     def clean_narration_text(self, narration_file: Path) -> Tuple[str, Dict]:
@@ -110,85 +126,60 @@ class TTSProcessor:
         print(f"🎉 Cleaned {len(cleaned_narrations)} narration files")
         return cleaned_narrations
     
-    def _generate_with_custom_api(self, text: str, output_path: str, **kwargs) -> bool:
-        """Generate audio using custom API from environment variables with retries and timeout"""
-        max_retries = 3
-        retry_delay = 10  # Increased delay to allow server restart
-        timeout = 300  # 5 minutes timeout for long narrations
-        
-        for attempt in range(max_retries):
+    def _generate_with_gemini_tts(self, text: str, output_path: str, **kwargs) -> bool:
+        """Generate audio using gTTS as Gemini doesn't support TTS yet"""
+        print(f"   Using Google Text-to-Speech (gTTS) for TTS generation...")
+        return self._generate_with_gtts_fallback(text, output_path, **kwargs)
+    
+    def _generate_with_gtts_fallback(self, text: str, output_path: str, **kwargs) -> bool:
+        """Fallback TTS using gTTS when Gemini TTS is not available"""
+        try:
+            from gtts import gTTS
+            import tempfile
+            
+            print(f"   🔊 Using gTTS fallback for: {text[:50]}...")
+            
+            # Create gTTS object
+            tts = gTTS(text=text, lang='en', slow=False)
+            
+            # Save to temporary file first
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
+            temp_file.close()
+            
             try:
-                url = os.getenv("TTS_API_URL", "http://147.182.254.9:9020")
-                payload = {
-                    "profile_id": kwargs.get("profile_id", "3e262aab-12af-46cd-aa3c-1cb18ff4de78"),
-                    "text": text,
-                    "language": kwargs.get("language", "en"),
-                    "seed": kwargs.get("seed", 0),
-                    "model_size": kwargs.get("model_size", "0.6B"),
-                    "instruct": kwargs.get("instruct", "string")
-                }
+                tts.save(temp_file.name)
                 
-                # Step 1: Generate
-                if attempt > 0:
-                    print(f"   🔄 Retrying Custom API (Attempt {attempt + 1}/{max_retries}) after error...")
-                    # If we got connection refused, the server might be restarting. Wait longer.
-                    time.sleep(retry_delay * attempt)
+                # Convert to WAV using pydub
+                audio = AudioSegment.from_mp3(temp_file.name)
+                audio.export(output_path, format='wav')
+            finally:
+                # Clean up temp file
+                if os.path.exists(temp_file.name):
+                    os.unlink(temp_file.name)
+            
+            if Path(output_path).exists() and Path(output_path).stat().st_size > 0:
+                print(f"   ✅ gTTS fallback success: {Path(output_path).name} ({Path(output_path).stat().st_size} bytes)")
+                return True
+            else:
+                print("   ❌ gTTS fallback: Failed to create valid audio file")
+                return False
                 
-                print(f"   📡 Connecting to TTS API: {url}/generate")
-                response = requests.post(f"{url}/generate", json=payload, timeout=timeout)
-                response.raise_for_status()
-                data = response.json()
-                generation_id = data.get("id")
-                
-                if not generation_id:
-                    print(f"   ❌ Custom API: No generation ID in response")
-                    if attempt < max_retries - 1:
-                        continue
-                    return False
-                
-                # Small wait for the server to process the audio file
-                # The voicebox-api needs time to generate the wav file before we download it
-                time.sleep(5) 
-                
-                # Step 2: Download
-                print(f"   📥 Downloading audio: {generation_id}")
-                audio_response = requests.get(f"{url}/audio/{generation_id}", timeout=timeout)
-                audio_response.raise_for_status()
-                
-                with open(output_path, 'wb') as f:
-                    f.write(audio_response.content)
-                
-                if Path(output_path).exists() and Path(output_path).stat().st_size > 0:
-                    print(f"   ✅ Custom API success: {Path(output_path).name} ({Path(output_path).stat().st_size} bytes)")
-                    return True
-                else:
-                    print(f"   ❌ Custom API: Failed to create valid audio file")
-                    if attempt < max_retries - 1:
-                        continue
-                    return False
-                    
-            except requests.exceptions.ConnectionError as e:
-                print(f"   ⚠️ Custom API Connection Error (Server might be restarting): {e}")
-                if attempt < max_retries - 1:
-                    print(f"   ⏳ Waiting {retry_delay * (attempt + 1)}s before next attempt...")
-                    time.sleep(retry_delay * (attempt + 1))
-                else:
-                    return False
-            except Exception as e:
-                print(f"   ❌ Custom API: Error on attempt {attempt + 1}: {e}")
-                if attempt < max_retries - 1:
-                    time.sleep(retry_delay)
-                else:
-                    return False
-        return False
-
-    def generate_audio_for_segment(self, narration_data: Dict, tts_service: str = 'custom_api', **kwargs) -> bool:
+        except ImportError:
+            print(f"   ❌ gTTS not available. Please install: pip install gtts")
+            return False
+        except Exception as e:
+            print(f"   ❌ gTTS fallback error: {e}")
+            return False
+    
+    def generate_audio_for_segment(
+        self, narration_data: Dict, tts_service: str = 'gemini_tts', **kwargs
+    ) -> bool:
         """
         Generate audio for a single narration segment with existence check
         
         Args:
             narration_data: Dictionary with segment information
-            tts_service: TTS service to use ('custom_api')
+            tts_service: TTS service to use ('gemini_tts')
             **kwargs: Additional arguments for TTS service
             
         Returns:
@@ -231,7 +222,7 @@ class TTSProcessor:
         
         return success
     
-    def generate_all_audio(self, tts_service: str = 'custom_api', generate_complete: bool = False, **kwargs) -> List[Dict]:
+    def generate_all_audio(self, tts_service: str = 'gemini_tts', generate_complete: bool = False, **kwargs) -> List[Dict]:
         """
         Generate audio for all narration segments - PARALLEL VERSION
         
@@ -392,8 +383,8 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='Generate audio from video narration files')
-    parser.add_argument('--service', choices=['custom_api'], 
-                       default='custom_api', help='TTS service to use')
+    parser.add_argument('--service', choices=['gemini_tts'], 
+                       default='gemini_tts', help='TTS service to use')
     parser.add_argument('--lang', default='en', help='Language code (for gTTS)')
     parser.add_argument('--voice', default='en-US-AriaNeural', help='Voice (for Edge TTS/Azure)')
     parser.add_argument('--clean-only', action='store_true', help='Only clean text, don\'t generate audio')

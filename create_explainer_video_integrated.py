@@ -268,19 +268,19 @@ class IntegratedExplainerVideoCreator(ExplainerVideoCreator):
             print("\n3️⃣ VERIFYING AUDIO & GENERATING COMPLETE NARRATION")
             print("-" * 70)
             
+            # Verify audio segments and prepare data structure
+            # We set generate_complete=False because the combined audio is not needed for video compilation
+            audio_results = tts_processor.generate_all_audio(tts_service='gemini_tts', generate_complete=False)
+            
             # Check how many audio files were actually generated in the job_dir/audio
             audio_dir = job_dir / "audio"
             generated_audio_files = list(audio_dir.glob("segment_*.wav"))
             audio_success = len(generated_audio_files) > 0
             
-            print(f"📊 Audio generation status: {len(generated_audio_files)} segments generated")
-            
-            # Verify audio segments and prepare data structure
-            # We set generate_complete=False because the combined audio is not needed for video compilation
-            audio_results = tts_processor.generate_all_audio(tts_service='custom_api', generate_complete=False)
+            print(f"Audio generation status: {len(generated_audio_files)} segments generated")
             
             if not audio_success:
-                print("⚠️ Audio generation had issues")
+                print("Audio generation had issues")
 
             if progress_callback:
                 progress_callback(85, f"Audio verification complete: {len(generated_audio_files)} files ready")
@@ -464,6 +464,7 @@ async def main():
     # Generate video
     result = await creator.generate_video_with_integrated_images(
         prompt=args.prompt,
+        color_scheme="modern_blue",  # Default color scheme
         target_duration=args.duration,
         output_dir=args.output_dir
    )

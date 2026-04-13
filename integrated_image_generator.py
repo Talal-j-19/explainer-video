@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
 Integrated Image Generator for Explainer Videos
-Uses the new template-based infographic system via HTTP API for optimal performance.
+Uses the deployed image generation API for segment visuals.
 
 Architecture:
-  Script Segment → Image Prompt → HTTP API → HTML → Playwright → PNG
+  Script Segment → Prompt Enrichment → HTTP API → Image URL → Download PNG
 """
 
 import os
 import json
 import asyncio
+import base64
 from pathlib import Path
 from typing import Optional, Dict, Any
 from playwright.async_api import async_playwright
@@ -28,12 +29,15 @@ else:
 
 class IntegratedImageGenerator:
     """
-    Generate infographic images using the template-based V2 system via HTTP API
+    Generate infographic images using the deployed image generation API
     """
     
     # API Configuration
-    API_BASE_URL = os.getenv("API_BASE_URL", "http://172.18.160.1:5000")
-    INFOGRAPHIC_ENDPOINT = "/api/explainer-infographic"
+    API_BASE_URL = os.getenv("IMAGE_API_BASE_URL") or os.getenv("API_BASE_URL") or "https://recreative.signagexai.com/fal-ai-fallback"
+    IMAGE_GENERATION_ENDPOINT = os.getenv("IMAGE_API_ENDPOINT", "/generate")
+    DEFAULT_ASPECT_RATIO = os.getenv("IMAGE_API_ASPECT_RATIO", "16:9")
+    DEFAULT_RESOLUTION = os.getenv("IMAGE_API_RESOLUTION", "1K")
+    DEFAULT_OUTPUT_FORMAT = os.getenv("IMAGE_API_OUTPUT_FORMAT", "png")
     
     def __init__(self, output_dir: Optional[str] = None, use_content_only: bool = False):
         """
@@ -46,10 +50,114 @@ class IntegratedImageGenerator:
         self.output_dir = Path(output_dir) if output_dir else Path("video_segments")
         self.output_dir.mkdir(exist_ok=True)
         
-        self.api_url = f"{self.API_BASE_URL}{self.INFOGRAPHIC_ENDPOINT}"
+        self.api_url = f"{self.API_BASE_URL.rstrip('/')}/{self.IMAGE_GENERATION_ENDPOINT.lstrip('/')}"
         
         print(f"📁 Output directory: {self.output_dir}")
         print(f"🔗 API endpoint: {self.api_url}")
+
+    def _looks_like_image_reference(self, value: Any) -> bool:
+        """Check if a string value appears to be an image URL or data URL."""
+        if not isinstance(value, str) or not value.strip():
+            return False
+        return value.startswith("http://") or value.startswith("https://") or value.startswith("data:image/")
+
+    def _extract_first_image_reference(self, data: Any) -> Optional[str]:
+        """Recursively extract the first image URL/data URL from an API response payload."""
+        if isinstance(data, dict):
+            # Prefer explicit image keys first
+            for key in ("image_url", "imageUrl", "url"):
+                candidate = data.get(key)
+                if self._looks_like_image_reference(candidate):
+                    return candidate
+
+            # Then search common nesting keys
+            for key in ("images", "data", "output", "result", "results", "response"):
+                if key in data:
+                    nested = self._extract_first_image_reference(data[key])
+                    if nested:
+                        return nested
+
+            # Finally, scan all values
+            for value in data.values():
+                nested = self._extract_first_image_reference(value)
+                if nested:
+                    return nested
+
+        if isinstance(data, list):
+            for item in data:
+                nested = self._extract_first_image_reference(item)
+                if nested:
+                    return nested
+
+        return None
+
+    def _build_image_prompt(
+        self,
+        prompt: str,
+        slide_type: str,
+        preferred_layout: Optional[str] = None,
+        color_scheme: Optional[str] = None,
+        title: Optional[str] = None,
+        text_overlay: Optional[str] = None,
+        narration: Optional[str] = None,
+        key_points: Optional[Any] = None
+    ) -> str:
+        """Build a detailed prompt for the deployed image API from script segment metadata."""
+        prompt_parts = [f"Core topic: {prompt}"]
+
+        if title:
+            prompt_parts.append(f"Slide title: {title}")
+        if slide_type:
+            prompt_parts.append(f"Slide type: {slide_type}")
+        if preferred_layout:
+            prompt_parts.append(f"Preferred layout style: {preferred_layout}")
+        if color_scheme:
+            prompt_parts.append(f"Use this color palette theme: {color_scheme}")
+        if text_overlay:
+            prompt_parts.append(f"Important on-image text: {text_overlay}")
+        if narration:
+            prompt_parts.append(f"Narration context: {narration}")
+        if key_points:
+            if isinstance(key_points, list):
+                points_text = ", ".join(str(k).strip() for k in key_points if str(k).strip())
+            else:
+                points_text = str(key_points).strip()
+            if points_text:
+                prompt_parts.append(f"Key points to visualize: {points_text}")
+
+        prompt_parts.append(
+            "Style requirements: create a clean, professional 16:9 educational explainer infographic image, "
+            "with clear visual hierarchy, high readability, and no watermark."
+        )
+
+        return "\n".join(prompt_parts)
+
+    def save_generated_image(self, image_reference: str, output_path: str) -> bool:
+        """Save an image from URL or data URL to disk."""
+        try:
+            output_file = Path(output_path)
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+
+            if image_reference.startswith("data:image/"):
+                _, encoded_data = image_reference.split(",", 1)
+                image_bytes = base64.b64decode(encoded_data)
+            else:
+                image_response = requests.get(image_reference, timeout=120)
+                image_response.raise_for_status()
+                image_bytes = image_response.content
+
+            with open(output_file, "wb") as f:
+                f.write(image_bytes)
+
+            if output_file.exists() and output_file.stat().st_size > 0:
+                return True
+
+            print("   ❌ Saved file is empty")
+            return False
+
+        except Exception as e:
+            print(f"   ❌ Failed to save generated image: {e}")
+            return False
     
     def generate_infographic_via_service(
         self, 
@@ -61,10 +169,10 @@ class IntegratedImageGenerator:
         title: Optional[str] = None,
         text_overlay: Optional[str] = None,
         narration: Optional[str] = None,
-        key_points: Optional[any] = None,
+        key_points: Optional[Any] = None,
     ) -> Optional[Dict[str, Any]]:
         """
-        Generate infographic using the HTTP API
+        Generate infographic image using the deployed HTTP API
         
         Args:
             prompt: Topic/text for infographic generation
@@ -76,7 +184,7 @@ class IntegratedImageGenerator:
             narration: Optional narration text from the script segment
         """
         if preferred_layout:
-            # Add layout hint to prompt
+            # Keep hinting to preserve current layout behavior expectations
             layout_hints = {
                 'cards': 'Present as individual cards with key points and visual elements',
                 'timeline': 'Show chronologically as a timeline with events or sequential steps',
@@ -91,26 +199,28 @@ class IntegratedImageGenerator:
                 prompt = f"{prompt}. {hint}"
         
         try:
+            enriched_prompt = self._build_image_prompt(
+                prompt=prompt,
+                slide_type=slide_type,
+                preferred_layout=preferred_layout,
+                color_scheme=color_scheme,
+                title=title,
+                text_overlay=text_overlay,
+                narration=narration,
+                key_points=key_points
+            )
+
+            # Map the legacy view mode to aspect ratio
+            aspect_ratio = "9:16" if view_mode == "portrait" else self.DEFAULT_ASPECT_RATIO
             # Prepare request payload
             payload = {
-                "topic": prompt,
-                "viewMode": view_mode,
-                "slideType": slide_type,
+                "prompt": enriched_prompt,
+                "num_images": 1,
+                "aspect_ratio": aspect_ratio,
+                "output_format": self.DEFAULT_OUTPUT_FORMAT,
+                "sync_mode": True,
+                "resolution": self.DEFAULT_RESOLUTION,
             }
-            
-            # Add optional fields if provided
-            if preferred_layout:
-                payload["preferredLayout"] = preferred_layout
-            if color_scheme:
-                payload["colorScheme"] = color_scheme
-            if title:
-                payload["title"] = title
-            if text_overlay:
-                payload["textOverlay"] = text_overlay
-            if narration:
-                payload["narration"] = narration
-            if key_points:
-                payload["keyPoints"] = key_points
 
             # 🔹 Print payload before sending
             print("📤 Payload being sent to API:")
@@ -120,28 +230,34 @@ class IntegratedImageGenerator:
             print(f"   🌐 Making API request to {self.api_url}")
             if color_scheme:
                 print(f"   🎨 Using color scheme: {color_scheme}")
-            
+
+            headers = {'Content-Type': 'application/json'}
+            api_key = os.getenv("IMAGE_API_KEY")
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
             # Make HTTP POST request to the API
             response = requests.post(
                 self.api_url,
                 json=payload,
-                headers={'Content-Type': 'application/json'},
+                headers=headers,
                 timeout=120
             )
             
             if response.status_code == 200:
                 result = response.json()
-                if result.get('success'):
-                    print(f"   ✅ API request successful")
-                    return {
-                        'success': True,
-                        'html': result.get('html', ''),
-                        'data': result.get('data', {}),
-                        'meta': result.get('meta', {})
-                    }
-                else:
-                    print(f"   ❌ API error: {result.get('error')}")
+
+                image_reference = self._extract_first_image_reference(result)
+                if not image_reference:
+                    print(f"   ❌ API response did not include an image URL/data URL")
+                    print(f"   📄 Response preview: {str(result)[:300]}")
                     return None
+
+                print(f"   ✅ API request successful")
+                return {
+                    'success': True,
+                    'image_reference': image_reference,
+                    'data': result
+                }
             else:
                 print(f"   ❌ HTTP Error {response.status_code}: {response.text[:200]}")
                 return None
@@ -784,7 +900,7 @@ class IntegratedImageGenerator:
         Returns:
             True if all successful, False otherwise
         """
-        print("\n🎨 GENERATING INFOGRAPHIC IMAGES (Template-Based V2)")
+        print("\n🎨 GENERATING INFOGRAPHIC IMAGES (External Image API)")
         print("=" * 60)
         
         if tts_processor:
@@ -884,7 +1000,7 @@ class IntegratedImageGenerator:
         total_tasks = len(tasks_data)
         
         async def process_segment(task_data):
-            """Process a single segment: API call + PNG rendering"""
+            """Process a single segment: API call + image save"""
             nonlocal completed_count
             segment = task_data['segment']
             segment_num = task_data['segment_num']
@@ -903,7 +1019,7 @@ class IntegratedImageGenerator:
                     await asyncio.to_thread(
                         tts_processor.generate_audio_for_segment, 
                         narration_data, 
-                        tts_service='custom_api'
+                        tts_service='gemini_tts'
                     )
                 
                 completed_count += 1
@@ -942,14 +1058,18 @@ class IntegratedImageGenerator:
                     print(f"   ❌ [{segment_num:02d}] Service failed")
                     return False
                 
-                html_content = result.get('html', '')
-                if not html_content:
-                    print(f"   ❌ [{segment_num:02d}] No HTML returned")
+                image_reference = result.get('image_reference')
+                if not image_reference:
+                    print(f"   ❌ [{segment_num:02d}] No image reference returned")
                     return False
                 
-                # Render to PNG (async)
+                # Save generated image as PNG (async wrapper around sync download)
                 png_path = self.output_dir / f"segment_{segment_num:02d}_background.png"
-                png_success = await self.render_html_to_png(html_content, str(png_path))
+                png_success = await asyncio.to_thread(
+                    self.save_generated_image,
+                    image_reference,
+                    str(png_path)
+                )
                 
                 if png_success:
                     segment['background_image'] = str(png_path)
@@ -974,7 +1094,7 @@ class IntegratedImageGenerator:
                             await asyncio.to_thread(
                                 tts_processor.generate_audio_for_segment, 
                                 narration_data, 
-                                tts_service='custom_api'
+                                tts_service='gemini_tts'
                             )
                     
                     completed_count += 1
@@ -984,7 +1104,7 @@ class IntegratedImageGenerator:
                     
                     return True
                 else:
-                    print(f"   ❌ [{segment_num:02d}] PNG rendering failed")
+                    print(f"   ❌ [{segment_num:02d}] Image save failed")
                     return False
                     
             except Exception as e:

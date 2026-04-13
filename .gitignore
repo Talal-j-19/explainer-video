@@ -107,3 +107,15 @@ segment_01_overlay_coords.json
 test.py
 test_tts.py
 test_tts_5_times.py
+
+# Test directories
+tts_quality_test/
+demo_video_segments/
+integration_test/
+ai_video_test/
+test_integration/
+
+# Additional test scripts
+ai_video_script.py
+demo_tts_integration.py
+test_integration.py
