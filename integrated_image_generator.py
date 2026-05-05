@@ -126,8 +126,11 @@ class IntegratedImageGenerator:
                 prompt_parts.append(f"Key points to visualize: {points_text}")
 
         prompt_parts.append(
-            "Style requirements: create a clean, professional 16:9 educational explainer infographic image, "
-            "with clear visual hierarchy, high readability, and no watermark."
+            "Style requirements: Create a visually striking 16:9 educational explainer infographic. "
+            "CRITICAL: The visual elements MUST directly illustrate the specific narration context precisely. "
+            "If text is included, ensure typography is PERFECTLY spelled exactly as requested, "
+            "highly legible, and visually distinct. Do NOT generate garbled, abstract, or irrelevant text. "
+            "Use clear visual hierarchy, engaging and relevant graphics, and no watermarks."
         )
 
         return "\n".join(prompt_parts)
@@ -281,7 +284,7 @@ class IntegratedImageGenerator:
             
         url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-fast-generate-001:predict?key={api_key}"
         payload = {
-            "instances": [{"prompt": prompt}],
+            "instances": [{"prompt": f"A highly engaging educational infographic tailored to this context. Visuals MUST strictly align with the narration subject. Any text must be PERFECTLY spelled exactly as requested. \n\n {prompt}"}],
             "parameters": {
                 "sampleCount": 1,
                 "aspectRatio": aspect_ratio
