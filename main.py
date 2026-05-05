@@ -145,6 +145,15 @@ async def generate_video(req: VideoRequest):
                         ExpiresIn=presign_expiry
                     )
                 s3_url = await asyncio.to_thread(_presign)
+                
+                # Delete local files after successful upload
+                try:
+                    import shutil
+                    job_dir = Path(local_video_path).parent
+                    shutil.rmtree(job_dir, ignore_errors=True)
+                except Exception as cleanup_err:
+                    print(f"Failed to cleanup local folder: {cleanup_err}")
+                    
             else:
                 s3_url = str(local_video_path)
 

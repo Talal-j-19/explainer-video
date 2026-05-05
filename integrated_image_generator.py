@@ -250,7 +250,7 @@ class IntegratedImageGenerator:
                 if not image_reference:
                     print(f"   ❌ API response did not include an image URL/data URL")
                     print(f"   📄 Response preview: {str(result)[:300]}")
-                    return None
+                    return self._gemini_fallback(enriched_prompt, aspect_ratio)
 
                 print(f"   ✅ API request successful")
                 return {
@@ -260,18 +260,55 @@ class IntegratedImageGenerator:
                 }
             else:
                 print(f"   ❌ HTTP Error {response.status_code}: {response.text[:200]}")
-                return None
+                return self._gemini_fallback(enriched_prompt, aspect_ratio)
                 
         except requests.exceptions.ConnectionError as e:
             print(f"   ❌ Connection error: Cannot reach {self.api_url}")
-            return None
+            return self._gemini_fallback(enriched_prompt, aspect_ratio)
         except requests.exceptions.Timeout:
             print(f"   ❌ Request timeout: API took too long to respond")
-            return None
+            return self._gemini_fallback(enriched_prompt, aspect_ratio)
         except Exception as e:
             print(f"   ❌ Error: {e}")
+            return self._gemini_fallback(enriched_prompt, aspect_ratio)
+            
+    def _gemini_fallback(self, prompt: str, aspect_ratio: str = "16:9") -> Optional[Dict[str, Any]]:
+        print("   🌟 Entering Gemini Fallback for image generation...")
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            print("   ❌ GEMINI_API_KEY not found in environment")
             return None
-    
+            
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-fast-generate-001:predict?key={api_key}"
+        payload = {
+            "instances": [{"prompt": prompt}],
+            "parameters": {
+                "sampleCount": 1,
+                "aspectRatio": aspect_ratio
+            }
+        }
+        
+        try:
+            res = requests.post(url, json=payload, timeout=60)
+            if res.status_code == 200:
+                data = res.json()
+                predictions = data.get("predictions", [])
+                if predictions and "bytesBase64Encoded" in predictions[0]:
+                    b64 = predictions[0]["bytesBase64Encoded"]
+                    mime = predictions[0].get("mimeType", "image/png")
+                    data_uri = f"data:{mime};base64,{b64}"
+                    print("   ✅ Gemini Fallback successful")
+                    return {
+                        'success': True,
+                        'image_reference': data_uri,
+                        'data': data
+                    }
+            print(f"   ❌ Gemini Fallback failed. Status: {res.status_code}")
+            return None
+        except Exception as e:
+            print(f"   ❌ Gemini Fallback Error: {e}")
+            return None
+            
     async def render_html_to_png(self, html_content: str, output_path: str) -> bool:
         """
         Render HTML content to PNG using Playwright

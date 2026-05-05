@@ -28,9 +28,9 @@ class VideoExplainerGenerator:
         load_dotenv(env_path)
         
         # Configure Gemini API
-        api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("API_KEY1")
+        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("API_KEY1")
         if not api_key:
-            raise Exception("GOOGLE_API_KEY or API_KEY1 environment variable not set.")
+            raise Exception("GEMINI_API_KEY or API_KEY1 environment variable not set.")
         genai.configure(api_key=api_key)
         
         # Create output directory
